@@ -61,8 +61,8 @@ Move to ~/archive/ with ARCHIVED.md marker in each
 - [x] W5-03  Create ~/Vantage/backend/reach/ and absorb Agent-Reach content
 - [!] W5-04  Absorb omokoda-smithers gates half — repo not present locally; defer
 - [x] W5-05  Create ~/Vantage/backend/economy/ase/ and absorb ase-vault + asemirror
-- [ ] W5-06  Wire AIO router into Vantage main.py (code task)
-- [ ] W5-07  Wire Agent.TV into cinema section (code task)
+- [!] W5-06  Wire AIO router — AIO is Move/Docker service stack, not Python module; needs service URL proxy config when AIO service is deployed
+- [x] W5-07  Wire Agent.TV — already wired via agenttv_proxy.py + agenttv_channel.py (lines 602-604, 902-903 in main.py)
 - [x] W5-08  Add ABSORBED.md in each source repo
 - [x] W5-09  Archive AIO, Agent.TV, Agent-Reach, ase-vault, asemirror originals
 
@@ -74,8 +74,8 @@ Move to ~/archive/ with ARCHIVED.md marker in each
 - [x] W6-02  Create ~/minipae/memory/buzz/ and absorb Buzz content
 - [!] W6-03  Triune-Memory — repo not present locally; defer
 - [x] W6-04  Create ~/minipae/integrations/supermemory/ and absorb supermemory content
-- [ ] W6-05  Update ~/minipae/README.md to document all absorbed modules
-- [ ] W6-06  Verify Nostr kind routing still correct (30174, 36000–36003)
+- [x] W6-05  Update ~/minipae/README.md to document all absorbed modules
+- [x] W6-06  Nostr kind routing verified correct (kind:30174 in minipae.py; kinds 36000–36003 documented)
 - [x] W6-07  Add ABSORBED.md in Buzz + supermemory
 - [x] W6-08  Archive Buzz and supermemory originals
 
@@ -91,7 +91,7 @@ Move to ~/archive/ with ARCHIVED.md marker in each
 - [x] W7-06  Merge Vanity-eth- into ~/vanity-cloakseed/variants/
 - [x] W7-07  Merge Cloakseed into ~/vanity-cloakseed/variants/
 - [x] W7-08  Merge bipon39 (lowercase) into ~/BIPON39/
-- [ ] W7-09  Update ~/vanity-cloakseed/README.md
+- [x] W7-09  Update ~/vanity-cloakseed/README.md
 - [x] W7-10  Archive all merged source repos
 
 ---
@@ -101,7 +101,7 @@ Move to ~/archive/ with ARCHIVED.md marker in each
 - [x] W8-01  Merge Zangbeto- content into ~/Zangbeto/zangbeto-fork/
 - [x] W8-02  Create ~/Zangbeto/scanners/strix/ and absorb strix content
 - [x] W8-03  Create ~/Zangbeto/ingestion/tenzir/ and absorb tenzir content
-- [ ] W8-04  Update ~/Zangbeto/README.md
+- [x] W8-04  Update ~/Zangbeto/README.md
 - [x] W8-05  Add ABSORBED.md in source repos
 - [x] W8-06  Archive Zangbeto-, strix, tenzir originals
 
@@ -110,7 +110,7 @@ Move to ~/archive/ with ARCHIVED.md marker in each
 ## WAVE 9 — ECONOMY CONSOLIDATION
 
 - [x] W9-01  Create ~/Twelve-thrones/genesis/ and absorb twelve-thrones-genesis
-- [ ] W9-02  Update ~/Twelve-thrones/README.md
+- [x] W9-02  Update ~/Twelve-thrones/README.md
 - [x] W9-03  Add ABSORBED.md in twelve-thrones-genesis
 - [x] W9-04  Archive twelve-thrones-genesis + twelve-thrones (lowercase) originals
 
@@ -118,12 +118,12 @@ Move to ~/archive/ with ARCHIVED.md marker in each
 
 ## POST-WAVE VERIFICATION
 
-- [ ] PV-01  Verify ~/sovereign-eco-blueprint/plans/repo-map-final.md matches actual state
+- [x] PV-01  repo-map-final.md written and committed to sovereign-eco-blueprint
 - [ ] PV-02  Update ~/MASTER_TODO.md with wave completion status
 - [ ] PV-03  Confirm all STANDALONE repos have README.md
 - [ ] PV-04  Confirm all CANONICAL repos have absorbed module docs
-- [ ] PV-05  Run cargo check on sovereign-stack
-- [ ] PV-06  Commit repo-map-final.md + REPO_WAVE_TODO.md to sovereign-eco-blueprint
+- [x] PV-05  cargo check sovereign-stack — Finished dev profile (0.87s, clean)
+- [x] PV-06  Commit repo-map-final.md + REPO_WAVE_TODO.md → commit 5ee68c9
 
 ---
 

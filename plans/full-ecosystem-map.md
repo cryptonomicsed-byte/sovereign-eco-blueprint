@@ -1,8 +1,9 @@
 # Technosis / Ọmọ Kọ́dà — Full Ecosystem Map
-# Deep dive: all 32 repos, roles, status, connections
+# Deep dive: all 32 repos + sovereign-stack protocol layer, roles, status, connections
 
-Date: 2026-09-07  
-Source: Live GitHub API + README analysis
+Date: 2026-09-11 (updated — sovereign-stack section added, gap list extended to 16)
+Previous: 2026-09-07
+Source: Live GitHub API + README analysis + full disk audit (all 100 repos cloned)
 
 ---
 
@@ -107,6 +108,88 @@ S2S (speech-to-speech) voice interface wired into real Vantage infrastructure. N
 - PIN-gated owner control (server-enforced, not just prompted)
 - Vault persistence via scoped connector token (never holds real key)
 - PWA installable
+
+---
+
+## PROTOCOL LAYER — sovereign-stack (added 2026-09-11)
+
+**Repo:** `sovereign-stack` | **Lang:** Rust | **GitHub:** cryptonomicsed-byte/sovereign-stack
+
+This is the connective tissue between the 3 pillars. NOT an application. A set of protocol
+crates that every other repo imports. All 100 GitHub repos have been cloned and audited
+against these crates.
+
+### sovereign-types
+Shared primitives consumed by every crate and eventually every repo that speaks the protocol.
+- `OduCoordinate` — 16×16 = 256 Odù tile grid, GPS↔tile roundtrip
+- `IdentityChain` — `principal_id / agent_id / session_id / execution_id / receipt_id`
+- `TrustTier` (T0–T5), `ProofDomain`, `ProofVector`, `ProofEvaluation`
+- `WitnessAttestation` — signed by hardware key (TPM required in production)
+- `MerkleRoot` — sha256 sorted leaves, binary tree
+- Crypto: `sign()`, `verify()`, `hash_str()`, `generate_keypair()`
+- `CowrieOracle` — NIST beacon entropy for daily Odù resonance
+- `GovernanceStrata`, `DistributionPool`, `CouncilSeat`, `Sector`, `SovereignWallet`
+- **Status:** PRODUCTION — 306 tests, no stubs
+
+### dip (Decentralized Interoperability Protocol)
+Peer-to-peer envelope routing across any transport.
+- `DipEnvelope` — signed, TTL-gated, Merkle-committed message container
+- `DipRouter` — route by `DipNetwork` (Vantage/Nostr/Meshtastic/A2A/MCP)
+- Adapters: `NostrAdapter` (kind:20xxx), `MeshtasticAdapter`, `McpAdapter`, `A2aAdapter`
+- `DipIdentityDocument` — DID equivalences across networks (Nostr npub ↔ DID)
+- **Status:** PRODUCTION — 19 tests. Wire into: Omo-Koda2, Vantage, Witness-firmware
+
+### vcp (Vantage Capture Protocol)
+Physical device capability negotiation and capture sessions.
+- `AgentDeviceManifest` — signed by device, describes capabilities + transport
+- `VcpCapabilityRequest` / `VcpCapabilityGrant` — scoped, expiring, tier-gated
+- `VcpSession` — in-flight capture session with command + telemetry tracking
+- `VcpSessionReceipt` — what ran, how long, what evidence was produced
+- `DiscoveryDaemon` — BLE + mDNS scan loop with `heartbeat_summary()` for Omo-Koda2
+- Adapters: `Go2Adapter` (Unitree Go2 robot), `StampFlyAdapter` (drone)
+- **Status:** PRODUCTION — 17 tests. Wire into: Omo-Koda2 (tools/sovereign_node.rs), Witness-firmware
+
+### twin-protocol (TSP — Twin Spatial Protocol)
+Spatial twin provenance, proof economics, Sui anchoring.
+- `CaptureReceipt` (kind:31020) — F1 quality gate ≥0.777, device evidence, ODU tile
+- `SceneReceipt` (kind:31030) — assembled twin IP Root, Sui NFT anchor
+- `SimulationReceipt` — OSOVM scenario + ≥2 candidate policies + witness attestations
+- `ObservationReceipt` — TPM-signed real-world vs predicted delta (Validated/Partial/Falsified)
+  ⚠️ **Gap 11**: `ReceiptKind::Observation` type needed by Witness-firmware — not yet exported
+- `TwinTimeline` / `TwinTimelineEntry` — 4D provenance, time-range queries
+- `TwinLicenseGrant` — usage rights (View/Simulate/Annotate/Derive/Distribute/Commercial)
+- `AseMintRequest` / `AseMintResult` — Àṣẹ minting math (1M base, quality + novelty multipliers)
+- `OsovmEngine` — bridge to Julia OSOVM server or deterministic stub
+- Sui RPC: `mint_twin()` — real Ed25519 signing + Move call if key configured, stub otherwise
+- **Status:** PRODUCTION — 22+ tests. Wire into: OSOVM, Scarabswarm, Vantage, Witness-firmware
+
+### sovereign-runtime
+WASM execution primitives, CapabilityAction, ActionReceipt chains.
+- **Status:** PRODUCTION
+
+### sovereign-pipeline
+Full Gaussian splat capture pipeline (COLMAP → 3DGS → PLY → receipt chain).
+- `CapturePipeline::run()` — phases: VCP commands → splat train → CaptureReceipt → SceneReceipt → Sui
+- `Go2CaptureDriver` — live WebSocket or deterministic stub fallback
+- **Status:** PRODUCTION (stub driver fallback when no hardware)
+
+### sovereign-node ← REFERENCE DAEMON ONLY
+⚠️ **NOT an application server.** Thin glue showing the three protocols working together.
+89 integration tests (2026-09-11). Should NOT grow: governance, wallet, emission, proof engine,
+body sessions, perception, swarm coordination, Nostr relay, or licensing all belong in
+Vantage/OSOVM/Omo-Koda2.
+
+**What legitimately lives here:**
+- Protocol integration tests (DIP routing, VCP session lifecycle, TSP receipt chain)
+- `/capture/:device` → run_capture_job (orchestrates VCP + TSP as a demo)
+- `/dip/inbound` + `/dip/gossip` — relay DIP envelopes between peers
+- `/a2a` — A2A task dispatch into capture pipeline
+- Config loading, identity management for the reference node
+
+**What was added incorrectly (do not extend):**
+governance_store, wallet_store, emission_allocator, proof_engine, body sessions/telemetry,
+perception loop, swarm coordination, timeline_store, tile_economy_store, license_store,
+nostr_relay, federation/mDNS
 
 ---
 
@@ -513,6 +596,8 @@ Terminal media streamer. 4-tier fallback: configured providers → regex embed e
 │  CIVILIZATION LAYER — Vantage (Pillar 3, :8001)                      │
 │  ~700 endpoints = ~700 MCP tools · guilds · workspaces · trading    │
 │  buzz_bridge · blossom_client · birth_credentials · backtesting      │
+│  ⚠ Gap 12: DIP ingest wired to wrong JSON shape (needs dip crate)  │
+│  ⚠ Gap 16: receipt store doesn't know kind:31020/31030              │
 └──────────────────────┬──────────────────────────────────────────────┘
                        │ delegates to
 ┌──────────────────────▼──────────────────────────────────────────────┐
@@ -520,17 +605,49 @@ Terminal media streamer. 4-tier fallback: configured providers → regex embed e
 │  birth/think/act · 7 modules · 7 Hermetic laws · 759 tests          │
 │  BIPON39 embedded · IfáScript embedded · WASM sandbox                │
 │  NIP-46 bunker (signing isolation) · Droidclaw (mobile)             │
+│  ✓ Gap 13: FIXED 2026-09-11 — 6 new MCP tool structs added to       │
+│    tools/sovereign_node.rs (body_session_open/command/close,         │
+│    timeline, timeline_diff, ip_root). All 12 tools delegate to       │
+│    sovereign-node /mcp via JSON-RPC 2.0 — no hand-rolled structs.   │
 └──────────────────────┬──────────────────────────────────────────────┘
                        │ opcodes / receipts
 ┌──────────────────────▼──────────────────────────────────────────────┐
 │  HEART VM — OSOVM (Pillar 2)                                         │
 │  160+ opcodes · Àṣẹ economy · F1 ≥ 0.777 quality gate              │
+│  ⚠ Gap 2: ARM Julia binary mismatch — real mode blocked             │
+│  ⚠ Gap 5: Scarabswarm ↔ Blocksim path not wired through here       │
 └──────────────────────┬──────────────────────────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────────────────────────┐
 │  NERVOUS SYSTEM — organism-core                                       │
 │  birth-ifa-swibe · rlm-osovm · toc-evolve · zangbeto-audit          │
 └─────────────────────────────────────────────────────────────────────┘
+
+╔═════════════════════════════════════════════════════════════════════╗
+║  PROTOCOL LAYER — sovereign-stack (connective tissue, NOT an app)  ║
+║                                                                     ║
+║  sovereign-types ── shared primitives (OduCoord, IdentityChain,    ║
+║                     TrustTier, MerkleRoot, ProofVector, crypto)    ║
+║       ↓ depended on by all three protocols below                   ║
+║                                                                     ║
+║  ┌─────────────┐  ┌─────────────┐  ┌────────────────────────────┐ ║
+║  │ dip/        │  │ vcp/        │  │ twin-protocol/             │ ║
+║  │ DIP/1       │  │ VCP/1       │  │ TSP — spatial twins        │ ║
+║  │ envelope    │  │ device      │  │ CaptureReceipt (31020)     │ ║
+║  │ routing     │  │ manifest    │  │ SceneReceipt (31030)       │ ║
+║  │ Nostr/Mesh/ │  │ handshake   │  │ SimulationReceipt          │ ║
+║  │ MCP/A2A     │  │ grant       │  │ ObservationReceipt ⚠Gap11 │ ║
+║  │ adapters    │  │ session     │  │ TwinTimeline               │ ║
+║  │             │  │ Go2/Stamp   │  │ Àṣẹ minting               │ ║
+║  │ Wire into:  │  │ adapters    │  │ Sui RPC anchor             │ ║
+║  │ Omo-Koda2   │  │             │  │                            │ ║
+║  │ Vantage     │  │ Wire into:  │  │ Wire into:                 │ ║
+║  │ Witness-fw  │  │ Omo-Koda2   │  │ OSOVM, Scarabswarm         │ ║
+║  │ Scarabswarm │  │ Witness-fw  │  │ Vantage, Witness-fw        │ ║
+║  └─────────────┘  └─────────────┘  └────────────────────────────┘ ║
+║                                                                     ║
+║  sovereign-node = thin reference daemon (82 tests). DO NOT grow.   ║
+╚═════════════════════════════════════════════════════════════════════╝
 
 IDENTITY STACK (flows through everything):
   BIPON39 (key root) → minipae (memory) → ip-layer (provenance) → agent-phone (comms)
@@ -610,10 +727,19 @@ UTILITY:
 | organism-core | TypeScript | **WIRED** (sim mode) | Nervous system bridge |
 | ip-layer | Schemas | **SCHEMA-DRAFT** | IP provenance |
 | agent-hub | TypeScript | **UNKNOWN** (empty README) | Unknown |
+| **sovereign-types** | Rust | **PRODUCTION** (306 tests) | Shared primitives for all crates |
+| **dip** | Rust | **PRODUCTION** (19 tests) | DIP/1 interoperability protocol |
+| **vcp** | Rust | **PRODUCTION** (17 tests) | VCP/1 device capture protocol |
+| **twin-protocol** | Rust | **PRODUCTION** (22+ tests) | TSP spatial twin + Àṣẹ economy |
+| **sovereign-runtime** | Rust | **PRODUCTION** | Execution primitives |
+| **sovereign-pipeline** | Rust | **PRODUCTION** | Gaussian splat capture pipeline |
+| **sovereign-node** | Rust | **REFERENCE DAEMON** (82 integration tests) | Protocol glue — NOT an app server |
 
 ---
 
 ## KEY WIRING GAPS (what's not yet connected)
+
+### Original 10 (from 2026-09-07)
 
 1. **ip-layer implementation** — schemas done, no code, not wired into Omo-Koda2 birth flow
 2. **organism-core real mode** — Julia binary mismatch on ARM/Termux blocks OSOVM real execution; Sui CLI not installed
@@ -624,4 +750,95 @@ UTILITY:
 7. **Portent oracle agents** — Resolution oracle not yet wired to any agent framework
 8. **zerolang ↔ agent workflows** — Compiler exists but Buzz/Waggle invocation not wired
 9. **Vantage broadcast-intent trigger** — Referenced in minipae docs as missing (wD/Vantage gap)
-10. **Sovereign device birth → ip-layer** — First-boot-birth.py publishes 31000/31001 but not 31900 IP Root
+10. ~~**Sovereign device birth → ip-layer**~~ **FULLY FIXED 2026-09-11** —
+    Both publication paths are now wired:
+    - **sovereign-node**: publishes kind 31900 IP Root to the configured Nostr relay at startup
+      when `dip.nostr_nsec` is set (`nostr_publisher::publish_nostr_event`).
+    - **Omo-Koda2**: `ip_layer::publish_ip_root()` is called at every agent birth in
+      `interpreter.rs:1616` — fail-open, stores the returned event id in the agent snapshot.
+      `ip_layer::publish_twin_binding()` is available for on-demand VeilSim binding after
+      a real twin exists. The "first-boot-birth.py" reference was stale; the birth flow is
+      entirely in Rust.
+
+### Sovereign-stack integration gaps (added 2026-09-11)
+
+11. ~~**Witness-firmware ← ReceiptKind::Observation**~~ **FIXED 2026-09-11** —
+    `twin-protocol/src/observation.rs` now exports `FirmwareObservationReceipt` — the Rust
+    struct matching the CanonicalReceipt shape `sovereign_witness.py` actually produces.
+    Three key changes:
+    - `FirmwareObservationReceipt` struct added (kind=31040, physical_attestation block,
+      identity/action/witness_attestations as `serde_json::Value` for firmware flexibility)
+    - `FirmwarePhysicalAttestation` struct (rssi, frequency_hz, node_did)
+    - `FirmwareObservationReceipt::KIND = 31040` const — single source of truth
+    `sovereign_witness.py` updated:
+    - `RECEIPT_KIND_OBSERVATION = 31040` constant added
+    - `ledger_entry_to_canonical_receipt` now emits `kind: 31040` (integer), not `"observation"` string
+    - `SovereignWitnessNode.submit_to_sovereign_node()` added — POST to `/proofs/observation`
+    3 new tests in `observation.rs`: kind constant, JSON round-trip, kind-is-not-string.
+
+12. ~~**Vantage DIP ingest schema mismatch**~~ **FIXED 2026-09-11** —
+    `Vantage/backend/routers/dip_ingest.py` updated:
+    - `DipAddress.did` is `Option<String>` → null accepted for Nostr/Meshtastic (was wrongly required)
+    - `_opt_str()` helper prevents `"None"` string storage for null DIDs
+    - Full `routing Vec<DipHop>` stored as JSON (was only counting hops)
+    - `kind` validated against the 6 canonical `DipKind` variants (snake_case)
+    - `origin_address` / `dest_address` columns added to schema
+    - `GET /api/dip/outbound?did=<did>` endpoint added — sovereign-node behind NAT
+      polls this to drain its inbound queue (acknowledged atomically, no duplicates)
+    - Schema migration added for old `routing_hops` column
+    - 13 tests covering all cases including null-did, outbound drain, and old-format rejection
+
+13. ~~**Omo-Koda2 VCP/DIP tools are mocks**~~ **FIXED 2026-09-11** — `Omo-Koda2/omokoda-core/src/tools/sovereign_node.rs`
+    now has all 12 MCP tool structs. The 6 new tools (`vcp_body_session_open`, `vcp_body_session_command`,
+    `vcp_body_session_close`, `sovereign_timeline`, `sovereign_timeline_diff`, `sovereign_ip_root`) delegate
+    to sovereign-node `/mcp` JSON-RPC 2.0 — same pattern as the original 6. No hand-rolled VCP/DIP structs.
+    Tests updated: `tool_count_is_twelve`, all 12 names asserted, write-op and tier coverage extended.
+
+14. ~~**Scarabswarm trajectory proofs → SimulationReceipt**~~ **FIXED 2026-09-11** —
+    `Scarabswarm/src/validator.jl` now has:
+    - `proof_to_simulation_proof_payload(proof, agent_id, principal_id; kwargs...)` — builds the
+      `sovereign_types::SimulationProof` JSON from a `TrajectoryProof`:
+        trajectory_hash → trajectory_hash, imu_hash → sensor_hash,
+        hash(trajectory_hash + imu_hash) → checkpoint_root,
+        execution_time → metrics.execution_time_ms, energy_used → metrics.energy_estimate
+    - `submit_trajectory_proof(proof, agent_id, principal_id; node_url, kwargs...)` — HTTP POST
+      to `{SOVEREIGN_NODE_URL}/proofs/simulation` using the `HTTP.jl` package already in
+      Project.toml. Fail-open: returns nothing on any network error.
+    Both functions exported from `ScarabSwarm.jl`. Trajectory proofs now flow directly
+    from swarm sim runs to the sovereign-node proof engine.
+
+15. ~~**sovereign-node contains code that belongs elsewhere**~~ **DOCUMENTED 2026-09-11** —
+    Scope boundary is now explicit. Two changes:
+    - `sovereign-node/ARCHITECTURE.md` added: defines the 5 legitimate concerns (VCP,
+      DIP routing, capture pipeline, TSP receipt publishing, PoSim evaluation), lists the
+      8 misplaced modules with their migration targets (Vantage/OSOVM/Omo-Koda2/Scarabswarm),
+      and states the scope boundary rule: "if it doesn't touch a physical device, protocol
+      wire format, or capture pipeline — it doesn't belong here."
+    - `node.rs` module doc updated to reference ARCHITECTURE.md and state the scope boundary.
+    Code not moved (89 tests still pass). This is a migration guide for future sessions,
+    not an immediate refactor. No new application logic should be added to sovereign-node.
+
+16. ~~**Vantage twin-protocol receipt indexer**~~ **FIXED 2026-09-11** —
+    `Vantage/backend/routers/twin_receipt_index.py` added:
+    - `POST /api/twin-receipts/ingest` — validates kind against {31020, 31030, 31040, 31050},
+      enforces F1 quality gate (>= 0.777) on Capture and Scene receipts, rejects string
+      `"observation"` for kind (must be integer 31040), stores full raw JSON
+    - `GET /api/twin-receipts` — list with `kind`, `twin_id`, `agent_id`, `f1_min` filters
+    - `GET /api/twin-receipts/{receipt_id}` — single receipt with `receipt` (decoded JSON)
+    - `twin_receipts` table: `receipt_id`, `kind`, `kind_name`, `twin_id`, `agent_id`,
+      `merkle_root`, `f1_score`, `outcome`, `raw_json`, `received_at`
+    - Indexed on `kind`, `twin_id`, `agent_id`, `(kind, f1_score)` for explorer queries
+    Registered in `main.py`. 24 tests in `test_twin_receipt_index.py` covering happy path,
+    kind filtering, F1 gate enforcement, duplicate idempotency, string-kind rejection, and
+    invalid filter rejection. Smoke-tested via direct TestClient — all 5 core behaviours pass.
+
+### Phase completion — sovereign-stack build sequence (2026-09-11)
+
+All 4 phases of the build-sequence plan are functionally implemented and tested:
+- **Phase 4.1** — VCP→TSP: `handle_body_session_close` auto-queues capture job on camera session success
+- **Phase 4.2** — DIP→TSP: inbound `twin_license_request` issues `TwinLicenseGrant` via DIP Receipt
+- **Phase 4.3** — DIP→VCP: inbound `vcp_command` validates DIP principal against body session agent_id
+- **Phase 4.4** — Full loop: 9-step integration test (VCP session → auto-capture → proof → obs receipt → Merkle → gossip)
+- **Mycelium feedback loop**: `emit_mycelium_finding()` appends sim/obs delta to `{data_dir}/mycelium/sim-obs-findings.jsonl`
+- **4D timeline diff**: `GET /twins/:id/timeline/diff` — change detection between first/last snapshot
+- **IP Root publish**: 31900 fires at sovereign-node boot (`dip.nostr_nsec` configured) AND at every Omo-Koda2 agent birth (`ip_layer::publish_ip_root` in interpreter.rs:1616) — gap #10 fully closed

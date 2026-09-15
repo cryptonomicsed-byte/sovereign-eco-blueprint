@@ -128,12 +128,13 @@ Walk away → session revokes → capabilities disappear.
 
 ```
 Vantage Capability Protocol (VCP)
-  ├── Robot adapter     (Unitree, Boston Dynamics, custom)
-  ├── Drone adapter     (DJI, PX4, ArduPilot)
-  ├── IoT adapter       (Home Assistant, Matter, Zigbee)
-  ├── Vehicle adapter   (CAN bus, OBD-II)
-  ├── Industrial adapter (OPC-UA, MQTT, Modbus)
-  └── Custom device adapter
+  ├── Robot adapter       (Unitree, Boston Dynamics, custom)
+  ├── Drone adapter       (DJI, PX4, ArduPilot)
+  ├── IoT adapter         (Home Assistant, Matter, Zigbee)
+  ├── Vehicle adapter     (CAN bus, OBD-II)
+  ├── Industrial adapter  (OPC-UA, MQTT, Modbus)
+  ├── WiFi CSI adapter    (RuView ESP32 — presence/vitals/pose)
+  └── RF scan adapter     (Bruce/NEMO M5Stack — probe/BLE/MAC scan)
 ```
 
 Manufacturers implement VCP once → works with any Vantage agent.
@@ -178,10 +179,12 @@ GAUSSIAN SPLATTING PIPELINE
 
 ### Active Perception Loop
 
-The agent doesn't passively collect data — it reasons about what's missing:
+The agent doesn't passively collect data — it reasons about what's missing.
+Two complementary sensing streams feed the loop:
 
+**Camera/depth stream** (geometric reality — what the space looks like):
 ```
-INITIAL SCAN → 72% coverage
+INITIAL SCAN → 72% geometric coverage
   ↓ Agent analyzes
   ├── missing: ceiling
   ├── weak: geometry occlusion
@@ -192,6 +195,33 @@ Robot → fills low-angle
 Camera → fills fine detail
   ↓
 RESCAN → 94% coverage → RESCAN → 99% confidence
+```
+
+**WiFi CSI stream** (vital reality — who/what is alive in the space right now):
+```
+RuView ESP32 nodes → Channel State Information
+  ↓ 8 KB model (4-bit quantized, runs on $9 hardware)
+  ├── Presence: person detected through wall
+  ├── Vitals: breathing 15 BPM, heart rate 72 BPM
+  ├── Pose: 17 keypoints estimated
+  ├── Occupancy: 2 people in room
+  └── OccWorld: 15-frame future occupancy prediction
+  ↓
+Live presence layer injected into spatial twin
+Agent uses predictions to direct camera/robot capture
+```
+
+**Together — active perception fusion:**
+```
+RuView OccWorld predicts: "movement expected in zone B in 8 frames"
+  ↓
+Agent pre-positions robot/drone camera at zone B
+  ↓
+Presence event fires → Hive Mind lookup: who is this?
+  ↓
+Bruce M5Stack BLE scan: MAC matches known entity "Alice / Tier:Friend"
+  ↓
+Twin updated: geometry (camera) + occupancy (CSI) + identity (BLE/MAC)
 ```
 
 ### Twin Acquisition Graph
@@ -300,21 +330,62 @@ The twin = **rentable/sellable form of a place**
 
 ---
 
+## THE PHYSICAL SENSING MESH
+
+Before any robot or drone is deployed, cheap stationary sensors already fill the
+space with continuous ambient intelligence.
+
+```
+PHYSICAL SENSING MESH
+  ├── RuView ESP32 nodes ($9 each)
+  │     WiFi CSI → presence / vitals / pose / room map / OccWorld prediction
+  │     Ed25519 witness chain per sensing event
+  │     VCP capability: presence.detect, vitals.breathing, vitals.heartrate,
+  │                     pose.estimate, occupancy.count, rf.fingerprint
+  │
+  ├── Bruce/NEMO M5StickC Plus ($20 each)
+  │     WiFi probe + BLE scan → MAC → entity ID → Hive Mind
+  │     VCP capability: rf.probe_scan, ble.scan, mac.observe
+  │     Also: Meshtastic relay (DIP adapter), IR blast, RFID read
+  │
+  └── M5Stack Launcher (firmware platform)
+        SD-card app store for sovereign firmware apps
+        Level 2 hardware tier (Vantage Companion class)
+```
+
+**Sensing mesh data flow:**
+```
+RuView: "person in zone B, breathing 14 BPM, estimated pose [x,y,z]×17"
+  → VCP session receipt → 31020 capture receipt (modality: wifi_csi)
+  → Twin: live occupancy layer (not static geometry — breathing presence)
+
+Bruce: "BLE MAC aa:bb:cc:dd:ee:ff detected, RSSI -62 dBm"
+  → Hive Mind resolve: entity_id = "alice-wallet-0x1234" / Tier: Friend
+  → Encounter logged → agent context set before Alice speaks a word
+```
+
+---
+
 ## THE COMPLETE PHYSICAL ORGANISM
 
 ```
-HUMAN
+HUMAN (carries Agent Tag — BLE/NFC identity anchor)
+  ↓
+PHYSICAL SENSING MESH (RuView + Bruce — ambient awareness before contact)
+  │ presence/vitals/MAC → Hive Mind primes context
   ↓
 VANTAGE DEVICE (Voice/Vision + Principal + Agent + Secure Vault + Capability Broker)
   ↓ VANTAGE NETWORK
-  ├── AGENTS ── GUILDS ── TOOLS
+  ├── AGENTS ── GUILDS ── TOOLS ── HIVE MIND
   ↓ CAPABILITIES (VCP)
   ├── ROBOTS ── DRONES ── VEHICLES ── HOME ── INDUSTRIAL
+  ├── RUVIEW NODES ── BRUCE FLEET (sensing mesh VCP leaf nodes)
   ↓ PHYSICAL WORLD
   ↓ SWARM SCAN → GAUSSIAN SPLAT → 4D TWIN (GE-Ver)
+  │              + WiFi CSI → LIVE PRESENCE LAYER (RuView OccWorld)
   ↓ WITNESS (independent physical attestation)
-  ↓ EVIDENCE (geometry_hash + capture_timestamps + witness_ids)
-  ↓ MYCELIUM (sim vs physical outcome; intention vs execution)
+  ↓ EVIDENCE (geometry_hash + capture_timestamps + csi_observations + witness_ids)
+  ↓ MYCELIUM (sim vs physical outcome; intention vs execution; CSI vs camera)
   ↓ IFÁSCRIPT CLAIMS (indexed by Odù tile)
   ↓ TWELVE THRONES (epistemic judgment)
   ↓ ZÀNGBÉTÒ (authorized transition record)
@@ -326,16 +397,26 @@ VANTAGE DEVICE (Voice/Vision + Principal + Agent + Secure Vault + Capability Bro
 
 ## BUILD ORDER FOR PHYSICAL LAYER
 
-1. **VCP spec v1** — Agent Device Manifest + Capability Grant schemas
-2. **BLE/Wi-Fi discovery daemon** — Vantage-Voice scans for VCP devices
-3. **First VCP adapter: Unitree Go2** — locomotion + camera + telemetry
-4. **Spatial-mining power profile** — Pi5 node enters capture mode
-5. **Pipeline Phase A** — Julia CPU training, COLMAP poses, few hundred Gaussians → CesiumJS
-6. **GE-Ver CesiumJS bump** — 1.124 → 1.135+ for native 3DGS
-7. **31020 per-capture receipt** — F1≥0.777 gate wired to OSOVM
-8. **31030 scene receipt** — assembled twin as IP Root creation
-9. **Active perception loop** — agent identifies gaps → directs machines
+1.  **VCP spec v1** — Agent Device Manifest + Capability Grant schemas
+2.  **BLE/Wi-Fi discovery daemon** — Vantage-Voice scans for VCP devices
+2b. **First VCP adapter: RuView ESP32** — BEFORE the robot; $9/node, immediate value
+      DeviceManifest: presence.detect + vitals.* + pose.estimate + occupancy.count
+      Stream: presence events → Hive Mind encounter triggers
+      Receipt: 31020 with modality:wifi_csi (no F1 gate — use confidence score instead)
+3.  **Bruce/NEMO M5Stack fleet** — BLE/probe scan → MAC → Hive Mind entity resolution
+      Level 2 hardware tier; runs DIP Meshtastic adapter for mesh relay
+3b. **First VCP adapter: Unitree Go2** — locomotion + camera + telemetry
+4.  **Spatial-mining power profile** — Pi5 node enters capture mode
+5.  **Pipeline Phase A** — Julia CPU training, COLMAP poses, few hundred Gaussians → CesiumJS
+6.  **GE-Ver CesiumJS bump** — 1.124 → 1.135+ for native 3DGS
+7.  **31020 per-capture receipt** — F1≥0.777 gate wired to OSOVM
+7b. **RuView CSI layer in twin** — live occupancy fused into spatial twin alongside geometry
+      Twin gets two layers: geometry (static splat) + presence (live CSI stream)
+8.  **31030 scene receipt** — assembled twin as IP Root creation
+9.  **Active perception loop** — RuView OccWorld (15-frame prediction) directs camera/robot
+      Agent uses predicted occupancy to pre-position capture hardware
 10. **Temporal twin** — repeated scans → change detection → 4D
+      RuView adds behavioral change detection: "room was empty at 2am; now occupied"
 
 ---
 

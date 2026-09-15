@@ -290,6 +290,64 @@ LANGS:   Rust · Python (MCP tool wrapper)
 
 ---
 
+### Phase 2.4a — First VCP Adapter: RuView ESP32 Sensing Node
+
+WHAT:
+  - RuView firmware flashed on ESP32-S3 ($9 hardware)
+  - DeviceManifest declares:
+      capabilities: [presence.detect, vitals.breathing, vitals.heartrate,
+                     pose.estimate, occupancy.count, rf.fingerprint]
+      ungrantable: []    (no actuators — sensing only, no safety concerns)
+      transport: [wifi, ble]
+  - RuView MCP server bridge: `npx @ruvnet/ruview mcp start` → DIP MCP adapter
+  - VCP session stream: presence events → Vantage Hive Mind encounter log
+  - CaptureReceipt (31020) emitted per sensing session, modality: "wifi_csi"
+  - No F1 gate (CSI sensing uses confidence score threshold instead)
+
+OUTPUTS:
+  - First complete VCP proof-of-concept at $9/node vs $20k robot
+  - Presence events logged to Hive Mind as entity encounters
+  - Ambient sensing running before any camera capture begins
+
+GATES:
+  ✓ RuView node registers VCP DeviceManifest with Vantage
+  ✓ VCP handshake completes (challenge/auth/grant)
+  ✓ Presence event fires, Hive Mind receives encounter record
+  ✓ 31020 receipt issued with modality:wifi_csi
+  ✓ OccWorld 15-frame prediction available as MCP tool call
+
+REPOS:   vcp/adapters/ruview/ · Vantage · hive_mind.py
+LANGS:   Rust (VCP adapter) · Python (MCP bridge) · TypeScript (MCP server)
+
+---
+
+### Phase 2.4b — Bruce/NEMO M5Stack Fleet (RF Identity Layer)
+
+WHAT:
+  - M5StickC Plus flashed with Bruce or NEMO firmware
+  - VCP adapter: DeviceManifest declares rf.probe_scan + ble.scan + mac.observe
+  - WiFi probe harvester: MAC addresses → POST /api/hive/entities + /encounters
+  - BLE scanner: device names + MACs → Hive Mind identifier linking
+  - Meshtastic relay: M5Stack with LoRa module → DIP Meshtastic adapter
+  - Bridge script: Bruce serial/HTTP output → Vantage Hive Mind API
+
+OUTPUTS:
+  - M5Stack fleet feeds real-world entity detections to Hive Mind
+  - Every WiFi probe = potential entity; hive resolves MAC → known entity or new
+  - M5Stack doubles as Level 2 Vantage Companion hardware (same device class)
+  - Meshtastic M5Stacks extend DIP mesh coverage
+
+GATES:
+  ✓ Bruce detects WiFi probe, MAC forwarded to Hive Mind, entity created
+  ✓ Known entity (MAC previously seen) resolves to existing entity_id
+  ✓ BLE scan detects Agent Tag of a sovereign node user → tier lookup
+  ✓ Meshtastic relay forwards DIP packet via mesh hop
+
+REPOS:   vcp/adapters/bruce-m5stack/ · Vantage · dip/adapters/meshtastic/
+LANGS:   Rust (VCP adapter) · Python (bridge) · C (Bruce firmware plugin)
+
+---
+
 ### Phase 2.4 — First VCP Adapter: Unitree Go2
 
 WHAT:
@@ -666,7 +724,9 @@ LANGS:   ALL
 | 2.1 | VCP Manifest Schema | 2 | 0.1+0.2+1.1 | Devices declare capabilities |
 | 2.2 | VCP Handshake | 2 | 2.1 | Auth + grant working |
 | 2.3 | Discovery Daemon | 2 | 2.1 | Find nearby VCP devices |
-| 2.4 | Unitree Go2 Adapter | 2 | 2.2+2.3 | Control real robot |
+| 2.4a | RuView ESP32 Adapter | 2 | 2.2+2.3 | First VCP node ($9); presence→Hive Mind |
+| 2.4b | Bruce M5Stack Fleet | 2 | 2.2+2.3 | MAC/BLE scan → Hive Mind entity IDs |
+| 2.4 | Unitree Go2 Adapter | 2 | 2.4a | Control real robot (sensing mesh first) |
 | 2.5 | Session + Commands | 2 | 2.4 | Full command/telemetry loop |
 | 2.6 | Session Receipt | 2 | 2.5 | Every session receipted |
 | 2.7 | Revocation + Mesh | 2 | 2.6+1.6 | Offline revocation works |
@@ -689,12 +749,16 @@ These can run at the same time without blocking each other:
 
 ```
 AFTER 0.1+0.2:
-  ├── DIP track: 1.1 → 1.2 → [1.3, 1.4, 1.5, 1.6 in parallel]
-  ├── VCP track: 2.1 → 2.2 → [2.3, 2.4 in parallel] → 2.5 → 2.6 → 2.7
-  └── TSP track: 3.1 → 3.2 → 3.3 → [3.4, 3.6 in parallel] → 3.5
+  ├── DIP track:     1.1 → 1.2 → [1.3, 1.4, 1.5, 1.6 in parallel]
+  ├── VCP track:     2.1 → 2.2 → [2.3, 2.4a, 2.4b in parallel] → 2.4 → 2.5 → 2.6 → 2.7
+  └── TSP track:     3.1 → 3.2 → 3.3 → [3.4, 3.6 in parallel] → 3.5
 
-EARLIEST PHYSICAL DEMO (robot scans room, twin on Sui):
-  0.1 → 0.2 → 2.1 → 2.2 → 2.3 → 2.4 → 3.1 → 3.2 → 3.3
+EARLIEST PHYSICAL DEMO — sensing mesh (no robot needed, $30 total hardware):
+  0.1 → 0.2 → 2.1 → 2.2 → 2.3 → 2.4a → 2.4b
+  Result: presence/vitals/MAC→Hive Mind running with 3 ESP32s + 2 M5Sticks
+
+EARLIEST PHYSICAL DEMO — robot scans room, twin on Sui:
+  add: 2.4 → 3.1 → 3.2 → 3.3
   (skip DIP entirely for local-only demo)
 
 EARLIEST CROSS-NETWORK DEMO (Nostr agent licenses a twin):

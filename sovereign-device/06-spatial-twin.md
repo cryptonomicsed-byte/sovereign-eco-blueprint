@@ -73,6 +73,46 @@ RECEIPT  — per capture: 31020 (F1≥0.777 gate) · per assembled scene:
 - The sovereign device is literally a DePIN node (peaq comparison Part 3/4);
   the twin economy is the DePIN incentivization pattern applied to capture.
 
+## WiFi CSI Layer — RuView Integration
+
+The spatial twin has two sensing streams, not one. Camera/depth captures
+**geometry** (what the space looks like). WiFi CSI captures **presence**
+(who is alive in the space right now, and how).
+
+```
+TWIN = GEOMETRIC LAYER (static splat)
+     + PRESENCE LAYER  (live CSI stream)
+
+RuView ESP32 nodes ($9/node) run 8 KB 4-bit quantized model:
+  → presence detection through walls
+  → breathing rate (6-30 BPM) + heart rate (40-120 BPM)
+  → 17-keypoint pose estimation (82.69% torso-PCK@20 on MM-Fi)
+  → OccWorld: 15-frame future occupancy prediction
+  → Ed25519 witness chain per sensing event
+
+VCP: RuView node declares DeviceManifest with capabilities:
+  presence.detect, vitals.breathing, vitals.heartrate,
+  pose.estimate, occupancy.count, rf.fingerprint
+
+Receipt: 31020 with modality:wifi_csi
+  (confidence threshold replaces F1 gate for CSI sensing)
+```
+
+**Active perception fusion:**
+```
+RuView OccWorld predicts: "movement in zone B in 8 frames"
+  → Agent pre-positions robot/drone at zone B
+  → Bruce M5Stack BLE scan identifies WHO (MAC → Hive Mind entity)
+  → Camera capture fills zone B geometry gap
+  → Twin: geometry (splat) + occupancy (CSI) + identity (BLE) unified
+```
+
+RuView ships an MCP server (`npx @ruvnet/ruview mcp start`) that maps
+directly onto the DIP MCP adapter — sensing data becomes agent tool calls.
+
+The sensing mesh requires zero robot hardware: 3 RuView ESP32s + 2 M5Sticks
+= complete ambient presence layer for a room, for ~$70 total.
+
 ## Honest status (2026-09)
 
 - [x] Spec: this artifact + artifacts 01-05 + polyglot-gaussian-splatting

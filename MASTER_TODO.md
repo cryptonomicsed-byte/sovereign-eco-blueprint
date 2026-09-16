@@ -550,8 +550,11 @@ Universal7State runtime struct: DONE (omokoda-core/src/seven/state.rs, 2026-09-1
 
 ### PHASE 28 — OSO Brain / Sovereign Hive Mind (ANYTIME — GPU.ai available NOW)
 Spec: ~/sovereign-eco-blueprint/specs/OSO_BRAIN_SPEC.md
-- 🔶 **28.1** Mycelium QLoRA fine-tune: 2,949 traces → GPU.ai A40 → GGUF → Omarchy deploy
-  IMMEDIATE: `python mycelium/training/train_qlora.py` — GPU.ai A40 $0.49/hr available
+- 🔶 **28.1** Mycelium QLoRA fine-tune: 3,031 examples → GPU.ai A40 → GGUF → Omarchy deploy
+  ✅ train_qlora.py written 2026-09-16: mycelium/train_qlora.py (stdlib-only, dry-run passes)
+  ✅ Dataset: 3,031 chat-format examples validated, ~5 min on A40, ~$0.04 ($5 credit = 125 runs)
+  ▶ READY: `cd mycelium && GPUAI_API_KEY=gpuai_live_yxOFo45nCboRVOU6ak8lduNJ python train_qlora.py`
+  Post-run: merge adapter → GGUF → Q4_K_M → walrus store → ollama on Omarchy → wire :11434
 - ❌ **28.2** Corpus expansion pipeline: WorkReceipts + Splats + Swarm + Odù decisions → 100k traces
 - ❌ **28.3** OSO Brain router integration: try local first, external LLM fallback only
 
@@ -576,7 +579,7 @@ These are the only remaining items that require your direct action:
 
 | # | What | Command / Action |
 |---|------|-----------------|
-| H1 | **Phase 28.1 — Mycelium fine-tune** | `python mycelium/training/train_qlora.py --traces ... --base_model Qwen/Qwen2.5-3B-Instruct` on GPU.ai A40. IMMEDIATE. |
+| H1 | **Phase 28.1 — Mycelium fine-tune** | `cd mycelium && GPUAI_API_KEY=gpuai_live_yxOFo45nCboRVOU6ak8lduNJ python train_qlora.py` (~$0.04, ~5 min). Script exists and passes dry-run. |
 | H2 | **Phase 7.2 — Sui dNFT redeploy** | `cd Omo-Koda2/omokoda-on-chain && sui client publish` after adding nostr_pubkey + bipon39_words fields to soul.move |
 | H3 | **Phase 9.3 — Stalwart mail infra** | Set up Stalwart on VPS: SPF/DKIM/DMARC, unblock port 25 at Contabo, set AGENT_MAIL_* env vars |
 | H4 | **Phase 12.5 — CasaOS App Store** | Submit PR to IceWhaleTech/CasaOS-AppStore with deploy/ package |

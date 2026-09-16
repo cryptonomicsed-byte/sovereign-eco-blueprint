@@ -1,0 +1,74 @@
+{
+  "oso_ir_version": "1.0",
+  "contract_class": "work",
+  "contract_name": "GPUComputeMarketplace",
+  "assets": [
+    {
+      "name": "ComputeJob",
+      "fields": [
+        "job_id",
+        "creator",
+        "budget_mist",
+        "gpu_requirement_gb",
+        "vram_requirement_gb",
+        "deadline_unix",
+        "model_hash",
+        "input_blob_id"
+      ]
+    },
+    {
+      "name": "ComputeResult",
+      "fields": [
+        "job_id",
+        "provider",
+        "output_hash",
+        "output_blob_id",
+        "gpu_seconds",
+        "gpu_device_id",
+        "completed_at"
+      ]
+    }
+  ],
+  "capabilities": ["GPU_COMPUTE"],
+  "minimum_tier": 2,
+  "evidence": {
+    "required": true,
+    "type": "ComputeReceipt",
+    "fields": [
+      "gpu_seconds",
+      "output_hash",
+      "device_id",
+      "model_hash",
+      "vram_used_gb",
+      "peak_tflops"
+    ]
+  },
+  "witness_policy": {
+    "quorum": 2,
+    "types": ["peer", "device"]
+  },
+  "settlement": {
+    "currency": "ASE",
+    "fee_routing": "6-pool",
+    "creator_share": 0.10,
+    "burn_share": 0.05,
+    "provider_share": 0.85
+  },
+  "policy": {
+    "deadline_enforcement": true,
+    "quality_threshold": 0.777,
+    "esu_tithe": 0.0369,
+    "private_execution": false,
+    "escalation_path": "peer-vote",
+    "auto_slash_on_miss": true
+  },
+  "lifecycle": [
+    "CREATED",
+    "ASSIGNED",
+    "ACCEPTED",
+    "STARTED",
+    "EXECUTED",
+    "VERIFIED",
+    "SETTLED"
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "oso_ir_version": "1.0",
+  "contract_class": "governance",
+  "contract_name": "CouncilDAO",
+  "assets": [
+    {
+      "name": "Proposal",
+      "fields": [
+        "proposal_id",
+        "proposer",
+        "title",
+        "description_hash",
+        "proposal_type",
+        "target_contract",
+        "change_payload_hash",
+        "stake_required_mist",
+        "voting_deadline_unix",
+        "submitted_at"
+      ]
+    },
+    {
+      "name": "Vote",
+      "fields": [
+        "vote_id",
+        "proposal_id",
+        "voter_agent_id",
+        "decision",
+        "rationale_hash",
+        "cast_at"
+      ]
+    },
+    {
+      "name": "CouncilSeat",
+      "fields": [
+        "seat_id",
+        "holder_agent_id",
+        "sector",
+        "term_start_unix",
+        "term_end_unix",
+        "staked_mist"
+      ]
+    }
+  ],
+  "capabilities": ["PROPOSAL_CREATE"],
+  "minimum_tier": 3,
+  "evidence": {
+    "required": true,
+    "type": "GovernanceVote",
+    "fields": [
+      "proposal_id",
+      "voter_count",
+      "yes_votes",
+      "no_votes",
+      "abstain_votes",
+      "quorum_met"
+    ]
+  },
+  "witness_policy": {
+    "quorum": 7,
+    "types": ["agent", "node"]
+  },
+  "settlement": {
+    "currency": "ASE",
+    "fee_routing": "dao-pool",
+    "creator_share": 0.00,
+    "burn_share": 0.03,
+    "provider_share": 0.00
+  },
+  "policy": {
+    "esu_tithe": 0.0369,
+    "bino_veto_enabled": true,
+    "minimum_council_seats": 12,
+    "staggered_terms": true,
+    "term_length_days": 90,
+    "slash_on_missed_vote": false,
+    "escalation_path": "council"
+  },
+  "lifecycle": [
+    "PROPOSED",
+    "SECONDED",
+    "VOTING",
+    "TALLYING",
+    "ENACTED",
+    "REJECTED"
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "oso_ir_version": "1.0",
+  "contract_class": "device",
+  "contract_name": "DeviceRegistry",
+  "assets": [
+    {
+      "name": "DeviceManifest",
+      "fields": [
+        "device_id",
+        "owner_agent_id",
+        "device_type",
+        "firmware_hash",
+        "public_key_hex",
+        "capability_set",
+        "location_hint",
+        "registered_at"
+      ]
+    },
+    {
+      "name": "DeviceBinding",
+      "fields": [
+        "binding_id",
+        "device_id",
+        "agent_id",
+        "capability_grant",
+        "bound_at",
+        "expires_at"
+      ]
+    }
+  ],
+  "capabilities": ["DEVICE_INHABIT"],
+  "minimum_tier": 1,
+  "evidence": {
+    "required": true,
+    "type": "DeviceAttestation",
+    "fields": [
+      "device_id",
+      "firmware_hash",
+      "attestation_sig",
+      "timestamp",
+      "challenge_nonce"
+    ]
+  },
+  "witness_policy": {
+    "quorum": 1,
+    "types": ["device"]
+  },
+  "settlement": {
+    "currency": "ASE",
+    "fee_routing": "direct",
+    "creator_share": 0.00,
+    "burn_share": 0.01,
+    "provider_share": 0.99
+  },
+  "policy": {
+    "esu_tithe": 0.0369,
+    "deadline_enforcement": false,
+    "binding_ttl_secs": 3600,
+    "re_attestation_interval_secs": 300,
+    "escalation_path": "auto-slash"
+  },
+  "lifecycle": [
+    "DISCOVERED",
+    "MANIFESTED",
+    "BOUND",
+    "ACTIVE",
+    "SUSPENDED",
+    "UNBOUND"
+  ]
+}

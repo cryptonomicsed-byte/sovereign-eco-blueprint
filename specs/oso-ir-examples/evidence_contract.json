@@ -1,0 +1,59 @@
+{
+  "oso_ir_version": "1.0",
+  "contract_class": "evidence",
+  "contract_name": "ZangbetoReceipt",
+  "assets": [
+    {
+      "name": "Receipt",
+      "fields": [
+        "receipt_hash",
+        "principal_id",
+        "capability_id",
+        "action_type",
+        "action_payload_hash",
+        "evidence_hash",
+        "submitted_at",
+        "block_height"
+      ]
+    },
+    {
+      "name": "WitnessAttestation",
+      "fields": [
+        "receipt_hash",
+        "witness_agent_id",
+        "witness_sig",
+        "attested_at",
+        "nostr_event_id"
+      ]
+    }
+  ],
+  "capabilities": ["EVIDENCE_SUBMIT"],
+  "minimum_tier": 0,
+  "evidence": {
+    "required": false
+  },
+  "witness_policy": {
+    "quorum": 2,
+    "types": ["peer", "node"]
+  },
+  "settlement": {
+    "currency": "ASE",
+    "fee_routing": "direct",
+    "creator_share": 0.00,
+    "burn_share": 0.00,
+    "provider_share": 0.00
+  },
+  "policy": {
+    "esu_tithe": 0.0,
+    "immutable_after_verify": true,
+    "nostr_kind": 31020,
+    "archive_to_walrus": true,
+    "escalation_path": "council"
+  },
+  "lifecycle": [
+    "SUBMITTED",
+    "PENDING_WITNESS",
+    "VERIFIED",
+    "ARCHIVED"
+  ]
+}

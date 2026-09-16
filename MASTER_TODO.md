@@ -1,5 +1,5 @@
 # Sovereign Stack — Master Build Checklist
-**Last audited: 2026-09-15 (session 3 — Waggle EsuGate + WatchStore, PRINT_DEVICE_SPEC, ODU_OPCODE_TAXONOMY, WITNESS_NODE_SPEC). Single source of truth — update here.**
+**Last audited: 2026-09-16 (session 5 — VPS herdr setup, corpus findings, 28.2 collector). Single source of truth — update here.**
 **All repos: github.com/cryptonomicsed-byte**
 
 Legend: ✅ done · 🔶 partial · ❌ missing · 🗄️ archived · 🪞 mirror/migrated
@@ -585,6 +585,25 @@ The formula resolves the cognitive loop: WHY → CONTEXT → DECISION → ACTION
 - ❌ **29.3** Evolution Engine: differential between Gₜ and Gₜ₋₁ triggers hermetic gate re-evaluation if Δ > threshold
   - Links to Justice alignment multiplier (multiplier=0.8+(balance×0.25)+(gate_alignment×0.15))
 - ❌ **29.4** GoalGenesisSpec.md: spec file in sovereign-eco-blueprint/specs/ before any code lands
+
+### VPS DEV WORKSTATION — LIVE (2026-09-16)
+| Component | Status | Notes |
+|-----------|--------|-------|
+| herdr 0.7.3 | ✅ RUNNING | socket /root/.config/herdr/herdr.sock |
+| herdr.service | ✅ systemd-enabled | survives reboot (currently tmux-owned, will hand off at reboot) |
+| hermes-1 | ✅ WORKING | v0.17.0, deepseek-v4-flash, 107 skills, 18 tools, w2:p3 |
+| claude-1 | ⏳ needs auth | Claude Code 2.1.273 installed; first-run onboarding incomplete |
+| opencode | ✅ installed | 1.17.13, herdr-integrated |
+| logrotate | ✅ /etc/logrotate.d/ares | daily/50MB, 14 kept, copytruncate (preserves 700MB trace logs) |
+| disk | ✅ 13 GB free (87%) | was disk-full (caused 5-week herdr outage) |
+| waggled | ❌ not yet | clone Agentic → run on :7777 (not :7778 — OSOVM owns that) |
+
+**Access from phone:** `ssh hostinger && herdr` — attaches to persistent session.
+**Headless agent control:** `herdr agent send hermes-1 "task"` / `herdr agent read hermes-1`
+
+**Claude Code auth — two options:**
+- Interactive: `ssh hostinger && herdr` → focus w2:p2 → complete onboarding
+- Or: add ANTHROPIC_API_KEY to /root/.claude/.env (say the word)
 
 ### HUMAN APPROVAL REQUIRED — DO THESE NEXT
 

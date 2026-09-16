@@ -550,12 +550,25 @@ Universal7State runtime struct: DONE (omokoda-core/src/seven/state.rs, 2026-09-1
 
 ### PHASE 28 — OSO Brain / Sovereign Hive Mind (ANYTIME — GPU.ai available NOW)
 Spec: ~/sovereign-eco-blueprint/specs/OSO_BRAIN_SPEC.md
-- 🔶 **28.1** Mycelium QLoRA fine-tune: 3,031 examples → GPU.ai A40 → GGUF → Omarchy deploy
-  ✅ train_qlora.py written 2026-09-16: mycelium/train_qlora.py (stdlib-only, dry-run passes)
-  ✅ Dataset: 3,031 chat-format examples validated, ~5 min on A40, ~$0.04 ($5 credit = 125 runs)
-  ▶ READY: `cd mycelium && GPUAI_API_KEY=gpuai_live_yxOFo45nCboRVOU6ak8lduNJ python train_qlora.py`
-  Post-run: merge adapter → GGUF → Q4_K_M → walrus store → ollama on Omarchy → wire :11434
-- ❌ **28.2** Corpus expansion pipeline: WorkReceipts + Splats + Swarm + Odù decisions → 100k traces
+- ❌ **28.1** Mycelium QLoRA fine-tune — BLOCKED on Kaggle phone verification
+  ✅ kaggle_finetune.ipynb pushed headless; GPU allocated; internet flag set
+  ✅ Dataset: bino85/mycelium-traces (3,031 examples) uploaded
+  ❌ Kaggle silently ignores enable_internet without phone verification → pip fails
+  PATH A (2 min): kaggle.com → Settings → Phone Verification → SMS → re-push kernel
+  PATH B (offline): upload unsloth wheel + Qwen2.5-3B weights as Kaggle datasets,
+    rewrite cell 1 to pip install --no-index --find-links=/kaggle/input/<wheels>/
+  ⚠️ CORPUS BLOCKER (discovered 2026-09-16):
+    VPS has 84,030 traces but 91% are wallet_intel OBSERVATIONS (wallet_buy/sell/found)
+    and 97% labeled "success" (only 3 failures). Useless for teaching failure recovery.
+    Local 3,031 decision traces ARE clean. Real fix = more decision traces, not more volume.
+  ✅ deploy_gguf.sh written: post-GGUF Omarchy (ollama) + VPS (larql :7780) + Walrus deploy
+- 🔶 **28.2** Corpus expansion — PARTIALLY STARTED 2026-09-16
+  ✅ collect_decision_traces.py: Vantage db + ares_logs collector (filters wallet_intel obs)
+  ▶ Run on VPS: `python collect_decision_traces.py --vps hostinger` (schema differs locally)
+  ❌ hive_mind_collector.py (WorkReceipts, SplatCorpus, SwarmCoord, OduDecision, Reputation)
+  ❌ Kaggriculture self-play loop (join before 2026-09-23 23:59 UTC — hard deadline)
+  ⚠️ 5,819 open findings, 1 applied — auto-apply only triggers on suggestion=="skill";
+    alert/config_fix types require manual review by design (not a bug, needs a sweep)
 - ❌ **28.3** OSO Brain router integration: try local first, external LLM fallback only
 
 ### PHASE 29 — Goal Genesis Engine (depends: Phase 28 + USF-7)

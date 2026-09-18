@@ -119,9 +119,9 @@ Move to ~/archive/ with ARCHIVED.md marker in each
 ## POST-WAVE VERIFICATION
 
 - [x] PV-01  repo-map-final.md written and committed to sovereign-eco-blueprint
-- [ ] PV-02  Update ~/MASTER_TODO.md with wave completion status
-- [ ] PV-03  Confirm all STANDALONE repos have README.md
-- [ ] PV-04  Confirm all CANONICAL repos have absorbed module docs
+- [x] PV-02  Update ~/MASTER_TODO.md with wave completion status
+- [x] PV-03  Confirm all STANDALONE repos have README.md
+- [x] PV-04  Confirm all CANONICAL repos have absorbed module docs
 - [x] PV-05  cargo check sovereign-stack — Finished dev profile (0.87s, clean)
 - [x] PV-06  Commit repo-map-final.md + REPO_WAVE_TODO.md → commit 5ee68c9
 

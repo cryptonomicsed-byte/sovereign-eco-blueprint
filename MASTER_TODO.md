@@ -319,11 +319,16 @@ Legend: ✅ done · 🔶 partial · ❌ missing · 🗄️ archived · 🪞 mirr
 - ✅ **ScarabSwarm SimReceipt GIX** — `SimReceipt.gix1_canonical_id` + `stamp_gix1()` method `Gix1(Simulation, OsovmExecution, receipt_id)`. Broker calls stamp after construction. 3 tests. Commit: `14e4f5d`
 - ✅ **Witness attestation GIX** — `WitnessAttestation.gix1_canonical_id` + `stamp_gix1()` method `Gix1(Receipt, MeshDevice, attest_id)`. Broker calls stamp after construction. 3 tests. Commit: `0f1467f`
 
-## GIX Phase 6 — NEXT (unblocked, software-only)
-- 🔲 **Gix1Index query API** — `Gix1Index::by_namespace(ns: GixNamespace) -> Vec<&Gix1Entry>` and `by_kind(kind: GixKind) -> Vec<&Gix1Entry>` for cross-index slice queries; add to gix-core
-- 🔲 **GlyphGraph cross-link** — when `session_composite_gix1()` is called, insert a directed edge into `GlyphGraph` connecting device_canonical_id → receipt_canonical_id with edge kind `VcpSession`
-- 🔲 **ObservationBundle GIX** — `ObservationBundle` in Witness should carry `gix1_canonical_id` stamped on `compute_hash()` finalization
-- 🔲 **UCX ComputeReceipt GIX** — `ComputeReceipt` in `~/UCX/` should carry `gix1_canonical_id: Option<String>` stamped as `Gix1(Receipt, OsovmExecution, receipt_id)`
+## GIX Phase 6 — ✅ COMPLETE (2026-09-19)
+- ✅ **Gix1Index query API** — `by_kind(kind)→Vec<&Gix1Entry>` and `by_namespace(ns)→Vec<&Gix1>` added to gix-core index. 2 tests. Commit: `e9aae6b`
+- ✅ **GlyphGraph cross-link** — `session_composite_gix1()` inserts directed `vcp_session` edge (device→receipt) into `GlyphGraph` via `RwLock<GlyphGraph>`. 3 tests (hex/edge/none). Commit: `d4af3b0`
+- ✅ **ObservationBundle GIX** — `ObservationBundle.gix1_canonical_id` + `stamp_gix1()` as `Gix1(Receipt, MeshDevice, bundle_id)`. Broker calls after hash finalisation. 2 tests. Commit: `6db1322`
+- ✅ **UCX ComputeReceipt GIX** — `ComputeReceipt.gix1_canonical_id` + `stamp_gix1()` as `Gix1(Receipt, OsovmExecution, job_id)`. Broker stamps on retrieval. Also fixed missing `#[derive]` on `VerificationProof`. 2 tests. Commit: `2b2a582`
+
+## GIX Phase 7 — NEXT (unblocked)
+- 🔲 **Gix1Index persistence** — `Gix1Index` should be serialisable to/from disk (JSON or bincode) so indexes survive broker restarts; add `save(path)` / `load(path)` helpers to gix-core
+- 🔲 **Cross-repo Merkle bridge** — expose the Merkle root of each repo's Gix1Index via the broker health endpoint so external verifiers can audit the full ecosystem canonical_id set
+- 🔲 **GlyphGraph persistence** — serialize/deserialize `GlyphGraph` (nodes + edges) in VCP broker so cross-link history survives restarts
 
 ## REMAINING BLOCKED / EXTERNAL (cannot unblock in software)
 - ❌ **Gap #49** omokoda-mesh-firmware ↔ DIP — C++ ESP32 firmware; needs DIP HTTP call added. Skip until hardware testing.

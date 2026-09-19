@@ -333,10 +333,11 @@ Legend: ✅ done · 🔶 partial · ❌ missing · 🗄️ archived · 🪞 mirr
 ### 7A — ✅ COMPLETE (2026-09-19)
 - ✅ **larql-glyph GlyphEdge alignment** — Replace local `GlyphEdge` (no weight) with `pub use gix_types::GlyphEdge`. Construction sites updated with `weight: 0`. 11 tests pass. Commit: `d3246073`
 
-### 7B — NEXT (unblocked)
-- 🔲 **GixKind::MemoryFold variant** — add to `gix-types` GixKind enum; needed by Triune-Memory + gix_bridge.rs for folded memory node identity
-- 🔲 **GixFold struct** — `{id: [u8;32], sources: Vec<[u8;32]>, compression_ratio: f32, fold_ts: u64}` — wire type for REM-compressed memory nodes
-- 🔲 **Semantic edge vocabulary** — `gix_bridge.rs::project_gix()` currently only adds `"follows"` episodic edges; add `"recalls"`, `"contradicts"`, `"derives"` edge types
+### 7B — ✅ COMPLETE (2026-09-19)
+- ✅ **GixKind::MemoryFold** — added to gix-types GixKind enum (serde: "memory_fold"). 1 test. GIX commit: `a497f92`
+- ✅ **GixFold struct** — `{id:[u8;32], sources:Vec<[u8;32]>, compression_ratio:f32, fold_ts:u64}` with `new()`, `canonical_id_hex()`, `to_gix1()`. 2 tests. GIX commit: `a497f92`
+- ✅ **GlyphGraph::edges()/nodes()** — public accessors added to gix-core. GIX commit: `a497f92`
+- ✅ **Semantic edge vocabulary** — `project_gix()` now emits "recalls" (weight 2, shared tags), "derives" (weight 1, sub-path), "contradicts" (weight -1, error/fail tags). 5 tests. Omo-Koda2 commit: `7d1b8d7`
 
 ### 7C — HELD (needs 7B first)
 - 🔲 **GixMemoryRef** — struct linking a GixNamespace::TriuneMemory canonical_id to its tier (episodic/semantic/procedural) and fold depth

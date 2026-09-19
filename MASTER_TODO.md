@@ -345,9 +345,10 @@ Legend: ✅ done · 🔶 partial · ❌ missing · 🗄️ archived · 🪞 mirr
 - ✅ **GixMemoryRef** — `{canonical_id, glyph, odu_base, tier, fold_depth}` + `new()` + `canonical_id_hex()` + `to_gix1()`; fold_depth=0 = raw, N = absorbed N levels into GixFold. 3 tests. GIX commit: `58c90cb`
 - ✅ **entry_to_gix_memory_ref()** bridge — `OduEntry + engine::MemoryTier → GixMemoryRef` in gix_bridge.rs; re-exports `GixMemoryRef/GixMemoryTier/GixNamespace/RoutingHints`. 2 tests. Omo-Koda2 commit: `84e1c18`
 
-### 7D — HELD (design only)
-- 🔲 **Gix1Index persistence** — `save(path)` / `load(path)` helpers; JSON or bincode
-- 🔲 **GlyphGraph persistence** — serialize/deserialize in VCP broker so cross-link history survives restarts
+### 7D — ✅ COMPLETE (2026-09-19)
+- ✅ **Gix1Index persistence** — `save(path)` atomic JSON write + `load(path)` with audit verification; missing file → empty index. 3 tests. GIX commit: `89445bf`
+- ✅ **GlyphGraph persistence** — `Serialize/Deserialize` added; `save(path)` + `load(path)` atomic write. 3 tests. GIX commit: `89445bf`
+- ✅ **VCP broker wired** — `save_graph(path)` / `load_graph_from(path)` on `HandshakeEngine`; lock-safe; 2 tests. VCP commit: `22f4d07`
 
 ## REMAINING BLOCKED / EXTERNAL (cannot unblock in software)
 - ❌ **Gap #49** omokoda-mesh-firmware ↔ DIP — C++ ESP32 firmware; needs DIP HTTP call added. Skip until hardware testing.

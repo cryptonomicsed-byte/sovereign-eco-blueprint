@@ -339,9 +339,11 @@ Legend: ✅ done · 🔶 partial · ❌ missing · 🗄️ archived · 🪞 mirr
 - ✅ **GlyphGraph::edges()/nodes()** — public accessors added to gix-core. GIX commit: `a497f92`
 - ✅ **Semantic edge vocabulary** — `project_gix()` now emits "recalls" (weight 2, shared tags), "derives" (weight 1, sub-path), "contradicts" (weight -1, error/fail tags). 5 tests. Omo-Koda2 commit: `7d1b8d7`
 
-### 7C — HELD (needs 7B first)
-- 🔲 **GixMemoryRef** — struct linking a GixNamespace::TriuneMemory canonical_id to its tier (episodic/semantic/procedural) and fold depth
-- 🔲 **GixNamespace::TriuneMemory** — new namespace variant for Triune-Memory records
+### 7C — ✅ COMPLETE (2026-09-19)
+- ✅ **GixNamespace::TriuneMemory** — new variant (serde: "triune_memory"). 1 test. GIX commit: `58c90cb`
+- ✅ **GixMemoryTier** — `Working/Episodic/Semantic` protocol-level enum mirroring `engine::MemoryTier`; gix-types stays dep-free. 1 test. GIX commit: `58c90cb`
+- ✅ **GixMemoryRef** — `{canonical_id, glyph, odu_base, tier, fold_depth}` + `new()` + `canonical_id_hex()` + `to_gix1()`; fold_depth=0 = raw, N = absorbed N levels into GixFold. 3 tests. GIX commit: `58c90cb`
+- ✅ **entry_to_gix_memory_ref()** bridge — `OduEntry + engine::MemoryTier → GixMemoryRef` in gix_bridge.rs; re-exports `GixMemoryRef/GixMemoryTier/GixNamespace/RoutingHints`. 2 tests. Omo-Koda2 commit: `84e1c18`
 
 ### 7D — HELD (design only)
 - 🔲 **Gix1Index persistence** — `save(path)` / `load(path)` helpers; JSON or bincode

@@ -313,11 +313,17 @@ Legend: ✅ done · 🔶 partial · ❌ missing · 🗄️ archived · 🪞 mirr
 - ✅ **GlyphGraph node lookup** — `GlyphGraph::get_node(canonical_id) -> Option<&GlyphNode>` already existed in `gix-core/src/graph.rs:28`. No changes needed.
 - ✅ **Cross-index composite fold** — `HandshakeEngine::session_composite_gix1(session_id, receipt)` folds `[device_canonical_id, receipt_canonical_id]` via `gix_fold_v1` → deterministic 32-byte session identity. Commit: `ad9bb9f`
 
-## GIX Phase 5 — NEXT (unblocked, software-only)
-- 🔲 **ARP receipt GIX** — `ArpEnvelope` or `ActionReceipt` should carry `gix1_canonical_id: Option<String>`; stamp `Gix1(Receipt, ArpReceipt, receipt_id)` on finalization in `~/ARP/`
-- 🔲 **DIP envelope GIX** — `DipEnvelope` should carry a GIX1 field stamped at ingest time with `Gix1(Receipt, Mycelium, envelope_id)` so every cross-protocol message is addressable
-- 🔲 **ScarabSwarm SimReceipt GIX** — `SimReceipt` should stamp `Gix1(Simulation, OsovmExecution, sim_id)` on proof finalization
-- 🔲 **Witness attestation GIX** — `WitnessAttestation` (Nostr kind 31020) should carry `gix1_canonical_id` stamped at observation-bundle creation time
+## GIX Phase 5 — ✅ COMPLETE
+- ✅ **ARP receipt GIX** — `ActionReceipt.gix1_canonical_id` added (`#[serde(default)]`); `store::submit()` backfills it from `ArpBridge.ingest()`. 2 tests. Commit: `ccf80d8`
+- ✅ **DIP envelope GIX** — `DipEnvelope.gix1_canonical_id` stamped eagerly in `new()` as `Gix1(Receipt, Mycelium, envelope_id)`. gix-types dep added to dip-types. 2 tests. Commit: `47896b2`
+- ✅ **ScarabSwarm SimReceipt GIX** — `SimReceipt.gix1_canonical_id` + `stamp_gix1()` method `Gix1(Simulation, OsovmExecution, receipt_id)`. Broker calls stamp after construction. 3 tests. Commit: `14e4f5d`
+- ✅ **Witness attestation GIX** — `WitnessAttestation.gix1_canonical_id` + `stamp_gix1()` method `Gix1(Receipt, MeshDevice, attest_id)`. Broker calls stamp after construction. 3 tests. Commit: `0f1467f`
+
+## GIX Phase 6 — NEXT (unblocked, software-only)
+- 🔲 **Gix1Index query API** — `Gix1Index::by_namespace(ns: GixNamespace) -> Vec<&Gix1Entry>` and `by_kind(kind: GixKind) -> Vec<&Gix1Entry>` for cross-index slice queries; add to gix-core
+- 🔲 **GlyphGraph cross-link** — when `session_composite_gix1()` is called, insert a directed edge into `GlyphGraph` connecting device_canonical_id → receipt_canonical_id with edge kind `VcpSession`
+- 🔲 **ObservationBundle GIX** — `ObservationBundle` in Witness should carry `gix1_canonical_id` stamped on `compute_hash()` finalization
+- 🔲 **UCX ComputeReceipt GIX** — `ComputeReceipt` in `~/UCX/` should carry `gix1_canonical_id: Option<String>` stamped as `Gix1(Receipt, OsovmExecution, receipt_id)`
 
 ## REMAINING BLOCKED / EXTERNAL (cannot unblock in software)
 - ❌ **Gap #49** omokoda-mesh-firmware ↔ DIP — C++ ESP32 firmware; needs DIP HTTP call added. Skip until hardware testing.

@@ -1,0 +1,139 @@
+version: "3.8"
+
+# Sovereign Agent Node — Tier A (minimal, ~500MB RAM)
+# Self-hosted ZimaOS/CasaOS app package.
+#
+# Start: docker compose up -d
+# Stop:  docker compose down
+# Logs:  docker compose logs -f
+#
+# All secrets come from .env — copy .env.example to .env and fill in required vars.
+
+services:
+  # ─── Civilization interface ──────────────────────────────────────────────────
+  vantage:
+    image: ghcr.io/cryptonomicsed-byte/vantage:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-vantage}:${DB_PASSWORD}@postgres:5432/vantage
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 20s
+      timeout: 8s
+      retries: 5
+      start_period: 30s
+
+  # ─── Protocol brokers ────────────────────────────────────────────────────────
+  ucx-broker:
+    image: ghcr.io/cryptonomicsed-byte/ucx-broker:latest
+    restart: unless-stopped
+    ports:
+      - "7790:7790"
+    environment:
+      UCX_PORT: "7790"
+      VANTAGE_URL: "http://vantage:8000"
+      VANTAGE_KEY: ${VANTAGE_INTERNAL_KEY:-}
+      GPUAI_KEY: ${UCX_GPUAI_MASTER_KEY:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7790/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  dip-bridge:
+    image: ghcr.io/cryptonomicsed-byte/dip-bridge:latest
+    restart: unless-stopped
+    ports:
+      - "7792:7792"
+    environment:
+      DIP_PORT: "7792"
+      DIP_PEER_NODES: ${DIP_PEER_NODES:-}
+      VANTAGE_URL: "http://vantage:8000"
+      NODE_SECRET_KEY: ${NODE_SECRET_KEY:?NODE_SECRET_KEY required}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7792/status"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  vcp-broker:
+    image: ghcr.io/cryptonomicsed-byte/vcp-broker:latest
+    restart: unless-stopped
+    ports:
+      - "7791:7791"
+    environment:
+      VCP_PORT: "7791"
+      VANTAGE_URL: "http://vantage:8000"
+      NODE_SECRET_KEY: ${NODE_SECRET_KEY:?NODE_SECRET_KEY required}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7791/status"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  arp-broker:
+    image: ghcr.io/cryptonomicsed-byte/arp-broker:latest
+    restart: unless-stopped
+    ports:
+      - "7795:7795"
+    environment:
+      ARP_PORT: "7795"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7795/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  witness-broker:
+    image: ghcr.io/cryptonomicsed-byte/witness-broker:latest
+    restart: unless-stopped
+    ports:
+      - "7794:7794"
+    environment:
+      WITNESS_PORT: "7794"
+      NOSTR_RELAY_URL: ${AGENT_NOSTR_RELAYS:-wss://relay.damus.io}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7794/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  scarab-broker:
+    image: ghcr.io/cryptonomicsed-byte/scarab-broker:latest
+    restart: unless-stopped
+    ports:
+      - "7793:7793"
+    environment:
+      SCARAB_PORT: "7793"
+      OSOVM_URL: ${OSOVM_URL:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7793/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ─── Database ─────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vantage
+      POSTGRES_USER: ${DB_USER:-vantage}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-vantage} -d vantage"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    driver: local

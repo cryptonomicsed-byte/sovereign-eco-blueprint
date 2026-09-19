@@ -115,20 +115,69 @@ economic model is live.
 
 ## DECISION 6 — PBKDF2 vs argon2id for identity seed derivation
 
-**Status: PENDING — decision required before any address migration**
+**Status: LOCKED 2026-09-16 — PBKDF2 kept (E13 closed)**
 
 Hermes found: spec says argon2id, code (`wallet.rs:279`) uses PBKDF2 (standard
 BIP-39 compatible). This is a one-way door — changing it changes every agent
 address and npub for every existing agent.
 
-**Options:**
-- Keep PBKDF2 (BIP-39 ecosystem compatibility, standard tooling)
-- Switch to argon2id (spec-compliant, stronger vs GPU brute-force)
+**Decision: KEEP PBKDF2**
 
-**Recommendation:** Keep PBKDF2 for BIP-39 compatibility (interop with Sui CLI,
-standard wallets). Document the decision here rather than leaving it implicit.
+Rationale:
+1. BIP-39 ecosystem compatibility — Sui CLI, Ledger, standard wallets all expect PBKDF2.
+2. Changing now would invalidate all existing testnet agent addresses and Sui objects.
+3. The GPU brute-force argument (favoring argon2id) does not apply to BIP-39 seeds,
+   which are already protected by the 12-24 word entropy (128-256 bits).
+4. argon2id is the right choice for *passwords*; PBKDF2 is correct for *mnemonic seeds*.
 
 **Code:** `Omo-Koda2/omokoda-core/src/identity/wallet.rs` — line ~279
+
+---
+
+## DECISION 7 — Àṣẹ ↔ USDC Exchange Mechanism (E10)
+
+**Status: LOCKED 2026-09-16**
+
+The ReservePool (15% of emissions) holds USDC-backed floor reserves.
+Exchange mechanism: automated market maker (constant-product x*y=k) scoped
+to the ReservePool balance only. NOT a full DEX — Àṣẹ is sovereign-native;
+USDC integration is for on/off ramp only.
+
+On-ramp: USDC → ReservePool → mint Àṣẹ at current oracle price.
+Off-ramp: burn Àṣẹ → ReservePool releases USDC (floor-protected: minimum
+1 ASE = $0.001 USDC hardcoded floor, cannot be lower).
+
+Implementation: `Vantage/backend/ase_exchange.py` (Phase 20 of L1 build).
+Current state: spec only. Activates after native L1 (Path B) or when Sui
+Move contract reaches sufficient liquidity.
+
+---
+
+## DECISION 8 — Price Oracle (E11)
+
+**Status: LOCKED 2026-09-16**
+
+Formula: `price = 1 / (1 - U)` where U = network utilization (0.0 to 0.95 max).
+
+U = active_compute_jobs / total_registered_gpu_capacity (reported by UCX adapters).
+Clamped at 0.95 to prevent division by zero / infinite price.
+Oracle update frequency: every 10 minutes (600 Àṣẹ emission cycles).
+Oracle source: UCX `/utilization` endpoint aggregated across all registered adapters.
+
+---
+
+## DECISION 9 — Royalty Model (E12)
+
+**Status: LOCKED 2026-09-16**
+
+- Default creator royalty: 10% on secondary transactions (DEFAULT_CREATOR_ROYALTY)
+- Type: **perpetual** (never sunsets) — rationale: agent identity is permanent; creator
+  attribution is permanent.
+- Transferable: YES — creator can sell their royalty right as a separate Move object.
+- Reversion clause: if creator agent is archived/dead with no heir, royalty flows to
+  GovernancePool for redistribution to active agents in the same sector.
+- Migration behavior: when a dApp migrates contract version, royalty rights transfer
+  to the new contract automatically (inherited by the upgrade transaction).
 
 ---
 

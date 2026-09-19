@@ -110,14 +110,14 @@ The fine-tuned GGUF brain is chain-independent and unblocks Phase 29.
 
 Mark the chosen path here and update Phase 15.4 in MASTER_TODO accordingly.
 
-- [ ] **Path A** — Stay on Sui (MVP only; accept censorship risk)
-- [ ] **Path B** — Sovereign rollup via Celestia/Rollkit ← recommended
-- [ ] **Path C** — Cosmos appchain via Ignite (after rollup is live)
+- [x] **Path A** — Stay on Sui (MVP only; accept censorship risk)
+- [ ] **Path B** — Sovereign rollup via Celestia/Rollkit
+- [ ] **Path C** — Cosmos appchain via Ignite
 - [ ] **Path D** — Full custom L1 (future)
 
-**Chosen:** _______________  
-**Rationale:** _______________  
-**Target devnet date:** _______________
+**Chosen:** Path A — Stay on Sui  
+**Rationale:** No users yet; censorship resistance is not an operational requirement today. OSOVM runs as a verifiable off-chain service; WorkClaim receipts anchored to Sui. Revisit when ecosystem has paying users or a concrete jurisdiction pressure.  
+**Target devnet date:** N/A — defer indefinitely until trigger condition fires
 
 ---
 

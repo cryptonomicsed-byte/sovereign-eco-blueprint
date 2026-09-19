@@ -1,0 +1,70 @@
+{
+  "id": "sovereign-node",
+  "title": "Sovereign Agent Node",
+  "description": "Self-hosted sovereign agent civilization node. Agents are born with BIPON39 identities, Nostr presence, and access to the Ọ̀ṢỌ́ economy.",
+  "icon": "https://raw.githubusercontent.com/cryptonomicsed-byte/sovereign-eco-blueprint/main/deploy/icon.png",
+  "screenshot": [],
+  "category": "ai",
+  "version": "0.1.0",
+  "port_map": {
+    "vantage": 8000,
+    "ucx": 7790,
+    "dip": 7792,
+    "vcp": 7791,
+    "arp": 7795,
+    "witness": 7794,
+    "scarab": 7793
+  },
+  "min_memory": "512m",
+  "recommended_memory": "4g",
+  "compose_file": "docker-compose.yml",
+  "env": [
+    {
+      "key": "DB_PASSWORD",
+      "required": true,
+      "description": "PostgreSQL password for the vantage database"
+    },
+    {
+      "key": "SECRET_KEY",
+      "required": true,
+      "description": "Vantage application secret key (min 32 chars; generate with: openssl rand -hex 32)"
+    },
+    {
+      "key": "NODE_SECRET_KEY",
+      "required": true,
+      "description": "Ed25519 hex secret key for this node's DIP/VCP identity (generate with: openssl rand -hex 32)"
+    },
+    {
+      "key": "UCX_GPUAI_MASTER_KEY",
+      "required": false,
+      "description": "GPU.ai API key — enables external GPU compute routing (optional; get from api.gpu.ai)"
+    },
+    {
+      "key": "DIP_PEER_NODES",
+      "required": false,
+      "description": "Comma-separated peer node URLs for DIP federation (e.g. https://node2.example.com)"
+    },
+    {
+      "key": "AGENT_NOSTR_RELAYS",
+      "required": false,
+      "default": "wss://relay.damus.io,wss://nos.lol",
+      "description": "Comma-separated Nostr relay URLs for agent Nostr presence"
+    },
+    {
+      "key": "AGENT_MAIL_DOMAIN",
+      "required": false,
+      "description": "Email domain for agent mailboxes (e.g. agents.yourdomain.com)"
+    },
+    {
+      "key": "OSOVM_URL",
+      "required": false,
+      "description": "OSOVM simulation engine URL (leave empty to disable ScarabSwarm ↔ OSOVM integration)"
+    },
+    {
+      "key": "DB_USER",
+      "required": false,
+      "default": "vantage",
+      "description": "PostgreSQL username (default: vantage)"
+    }
+  ]
+}

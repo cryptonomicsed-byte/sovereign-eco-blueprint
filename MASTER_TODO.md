@@ -325,10 +325,26 @@ Legend: ✅ done · 🔶 partial · ❌ missing · 🗄️ archived · 🪞 mirr
 - ✅ **ObservationBundle GIX** — `ObservationBundle.gix1_canonical_id` + `stamp_gix1()` as `Gix1(Receipt, MeshDevice, bundle_id)`. Broker calls after hash finalisation. 2 tests. Commit: `6db1322`
 - ✅ **UCX ComputeReceipt GIX** — `ComputeReceipt.gix1_canonical_id` + `stamp_gix1()` as `Gix1(Receipt, OsovmExecution, job_id)`. Broker stamps on retrieval. Also fixed missing `#[derive]` on `VerificationProof`. 2 tests. Commit: `2b2a582`
 
+## ORGANIZATION (2026-09-19) — ✅ COMPLETE
+- ✅ **AGENT_PRIMER.md** — 548-line pre-coding reference doc: anti-duplication matrix (35 rows), full repo catalog, GIX protocol reference, memory stack, dependency rules, 7-step checklist, external-AI guard. Commit: `860d46e`
+- ✅ **DELEGATION_CHECKLIST.md** — 81-line reusable task brief template. Commit: `860d46e`
+
 ## GIX Phase 7 — NEXT (unblocked)
-- 🔲 **Gix1Index persistence** — `Gix1Index` should be serialisable to/from disk (JSON or bincode) so indexes survive broker restarts; add `save(path)` / `load(path)` helpers to gix-core
-- 🔲 **Cross-repo Merkle bridge** — expose the Merkle root of each repo's Gix1Index via the broker health endpoint so external verifiers can audit the full ecosystem canonical_id set
-- 🔲 **GlyphGraph persistence** — serialize/deserialize `GlyphGraph` (nodes + edges) in VCP broker so cross-link history survives restarts
+### 7A — ✅ COMPLETE (2026-09-19)
+- ✅ **larql-glyph GlyphEdge alignment** — Replace local `GlyphEdge` (no weight) with `pub use gix_types::GlyphEdge`. Construction sites updated with `weight: 0`. 11 tests pass. Commit: `d3246073`
+
+### 7B — NEXT (unblocked)
+- 🔲 **GixKind::MemoryFold variant** — add to `gix-types` GixKind enum; needed by Triune-Memory + gix_bridge.rs for folded memory node identity
+- 🔲 **GixFold struct** — `{id: [u8;32], sources: Vec<[u8;32]>, compression_ratio: f32, fold_ts: u64}` — wire type for REM-compressed memory nodes
+- 🔲 **Semantic edge vocabulary** — `gix_bridge.rs::project_gix()` currently only adds `"follows"` episodic edges; add `"recalls"`, `"contradicts"`, `"derives"` edge types
+
+### 7C — HELD (needs 7B first)
+- 🔲 **GixMemoryRef** — struct linking a GixNamespace::TriuneMemory canonical_id to its tier (episodic/semantic/procedural) and fold depth
+- 🔲 **GixNamespace::TriuneMemory** — new namespace variant for Triune-Memory records
+
+### 7D — HELD (design only)
+- 🔲 **Gix1Index persistence** — `save(path)` / `load(path)` helpers; JSON or bincode
+- 🔲 **GlyphGraph persistence** — serialize/deserialize in VCP broker so cross-link history survives restarts
 
 ## REMAINING BLOCKED / EXTERNAL (cannot unblock in software)
 - ❌ **Gap #49** omokoda-mesh-firmware ↔ DIP — C++ ESP32 firmware; needs DIP HTTP call added. Skip until hardware testing.

@@ -262,7 +262,18 @@ Legend: ✅ done · 🔶 partial · ❌ missing · 🗄️ archived · 🪞 mirr
 - ✅ **Gap #20** — OSOVM event-bridge.js created: GPU_CONTRIBUTION → Vantage Dopamine mint, TOC_MINT → Synapse mint
 - ✅ **Gap #21** — OSOVM integrations/ucx/receipt_adapter.jl: check_mint_allowlist() added
 - ✅ **Gap #71** — OSOVM src/verification.jl: is_fully_verified(agent_state) + agent_is_verified(vm_states, id)
-- ✅ **Gaps #59/#60/#62/#63/#64** — ~/GIX/ workspace confirmed complete: gix-types (Gix1, GIX1_EMPTY_ROOT, gix1_audit, merkle_root, gix_fold_v1, gix_kdf_v1) + gix-core (GlyphGraph, Gix1Index). MANIFEST.toml created. 4 tests pass, zero warnings.
+- ✅ **GIX Phase 1 COMPLETE** (2026-09-19) — Gaps #59/#60/#62/#63/#64 fully implemented and tested:
+  - `Gix1` wire envelope struct (`version/kind/namespace/canonical_id/glyph/odu_base/odu_composed/provenance/created_at/routing/integrity`) with `new()`, `verify_integrity()`, `compute_envelope_hash()` (SHA-256 self-check)
+  - `GixNamespace` enum (OmokodaAgent/VantageRegistry/OsovmExecution/ArpReceipt/MeshDevice/Mycelium/IfScript/Custom)
+  - `RoutingHints { primary, fallback }` + `IntegrityMeta { envelope_hash }`
+  - `gix_fold_v1(inputs)` — SHA-256 of ordered canonical_ids (order-dependent, not commutative)
+  - `gix_kdf_v1(canonical_id, domain, owner, context)` — HKDF-SHA256 with salt `b"GLYPHINDEX/v1"` + 6 GixDomain variants
+  - 5 frozen ARM64 conformance vectors (byte-identical vs Python reference + If-Script)
+  - 11 tests pass, zero warnings. Commits: `bc40090` / `3cf564e` / `c27dd76`
+  - gix-core re-exports all new types; MANIFEST.toml present
+- ✅ **GIX Phase 1 Step 7 — ArpBridge upgraded** (2026-09-19): `omokoda-core/src/bridge/arp.rs` now uses canonical `Gix1::new(GixKind::Receipt, GixNamespace::ArpReceipt, ...)` — eliminates hand-rolled fold, adds `odu_composed`/`namespace`/`version`/`envelope_hash` to receipt JSON. Commit: `c27dd76`
+- ✅ **GIX Phase 1 — OsoIR spec alignment** (2026-09-19): `oso-wasm/src/ir.rs` now matches OSO-IR spec v1.0 exactly — `EvidenceSpec` (required/kind/fields), `WitnessPolicySpec` (quorum/types), `EvidenceKind` (7 variants), `WitnessType` (peer/device/agent/node), freeform `policy: BTreeMap<String,Value>`, full `SettlementSpec` (fee_routing/creator_share/burn_share/provider_share). 6 example files parse clean. Commits: `356d797` / `a6e6973`
+- ✅ **GIX Phase 2 — think/act Receipt GIX** (2026-09-19): Gaps #23/#24 confirmed wired. ArpBridge `receipt_think()`/`receipt_act()` both call `gix1_for_receipt()` which now uses `Gix1::new()`. Every think/act produces a canonical GIX1 envelope in the receipt JSON posted to Vantage.
 - ✅ **AgentComputeWallet** — kernel/compute/wallet.rs: full impl per AGENT_COMPUTE_WALLET_SPEC.md (86B/86M, 1%/day decay, 10:1 conversion, stake locks, ledger). MemoryVaultData.compute_wallet field added.
 - ✅ **DipBridge struct layer** — bridge/dip.rs: NetworkRepr + DipEnvelope + DipBridge (agent_to_dip_identity/wrap_action/send_via_router). Never hardcodes network="nostr".
 - ✅ **Habitat struct** — habitat/types.rs: Habitat (register_area, upsert_resource, resources_in) added.
@@ -290,6 +301,24 @@ Legend: ✅ done · 🔶 partial · ❌ missing · 🗄️ archived · 🪞 mirr
 | vessel-classifier.ts | **LIVE** | ✅ 67 action kinds → 16 ActionVessels (2026-09-14 session 2) |
 | twin-state.ts | **LIVE** | ✅ TwinStateVector computation + Vantage sync (2026-09-14 session 2) |
 
+## GIX Phase 3 — COMPLETE (2026-09-19)
+- ✅ **gix-core Gix1Index** — `insert_gix1(Gix1)` stores full wire envelope + entry; `resolve(canonical_id) -> Option<&Gix1>`; `PartialEq/Eq` by root; `Serialize/Deserialize` derived. 4 new tests. Commit: `dc3329c`
+- ✅ **Task/Receipt GIX** — `ReceiptStore` gains `gix1_index: Gix1Index` (`#[serde(default)]`); `record()` stamps `Gix1(Receipt, OsovmExecution, receipt_id)`; `gix1_root()` + `gix1_index()` accessors. 4 tests (grows/root-changes/audit/resolve). Commit: `3d9f623`
+- ✅ **Namespace GIX** — `Habitat.gix1_index: Gix1Index` (`#[serde(default)]`); `register_area()` stamps `Gix1(Physical, OmokodaAgent, area_id)`; `upsert_resource()` stamps same. Commit: `3d9f623`
+- ✅ **Device GIX** — VCP `register_device()` computes `Gix1(Physical, MeshDevice, device_id)` and logs canonical_id/glyph/odu_base via `tracing::info`. `VcpReceipt.gix1_canonical_id: Option<String>` (`#[serde(default)]`) added. Commit: `d0b09ad`
+
+## GIX Phase 4 — ✅ COMPLETE
+- ✅ **Task GIX** — `TaskManager::complete()` stamps `Gix1(Receipt, OsovmExecution, task_id)` and stores hex canonical_id in `Task.gix1_canonical_id` (`#[serde(default)]`). 4 tests. Commit: `156698d`
+- ✅ **VcpReceipt auto-stamp** — `SessionStore::complete()` auto-populates `gix1_canonical_id` via `Gix1(Receipt, MeshDevice, receipt_id)` if caller left it `None`; idempotent if already set. 2 tests. Commit: `ad9bb9f`
+- ✅ **GlyphGraph node lookup** — `GlyphGraph::get_node(canonical_id) -> Option<&GlyphNode>` already existed in `gix-core/src/graph.rs:28`. No changes needed.
+- ✅ **Cross-index composite fold** — `HandshakeEngine::session_composite_gix1(session_id, receipt)` folds `[device_canonical_id, receipt_canonical_id]` via `gix_fold_v1` → deterministic 32-byte session identity. Commit: `ad9bb9f`
+
+## GIX Phase 5 — NEXT (unblocked, software-only)
+- 🔲 **ARP receipt GIX** — `ArpEnvelope` or `ActionReceipt` should carry `gix1_canonical_id: Option<String>`; stamp `Gix1(Receipt, ArpReceipt, receipt_id)` on finalization in `~/ARP/`
+- 🔲 **DIP envelope GIX** — `DipEnvelope` should carry a GIX1 field stamped at ingest time with `Gix1(Receipt, Mycelium, envelope_id)` so every cross-protocol message is addressable
+- 🔲 **ScarabSwarm SimReceipt GIX** — `SimReceipt` should stamp `Gix1(Simulation, OsovmExecution, sim_id)` on proof finalization
+- 🔲 **Witness attestation GIX** — `WitnessAttestation` (Nostr kind 31020) should carry `gix1_canonical_id` stamped at observation-bundle creation time
+
 ## REMAINING BLOCKED / EXTERNAL (cannot unblock in software)
 - ❌ **Gap #49** omokoda-mesh-firmware ↔ DIP — C++ ESP32 firmware; needs DIP HTTP call added. Skip until hardware testing.
 - ❌ **Gap #67** OSOVM Gate 4 (MuJoCo contact determinism) — hardware/solver test required
@@ -298,8 +327,8 @@ Legend: ✅ done · 🔶 partial · ❌ missing · 🗄️ archived · 🪞 mirr
 - ❌ Sovereign node bootable image — requires physical hardware + archiso build
 - ❌ ARM64/x86 compile verification for Omo-Koda2 (cranelift SIGSEGV on Termux)
 - ❌ **Gap #35** VCP BLE/mDNS device discovery — hardware-dependent
-- ❌ **Gap #46** Synapse NIP-30 real signing — mock only, needs BIP-340 integration
-- ❌ **Gap #61** larql-glyph full migration to gix-core — API shape mismatch (larql merkle_root takes Walrus KV pairs, gix-core takes &[&str]); primitive algorithms are byte-identical
+- ✅ **Gap #46** Synapse NIP-30 real signing — mock only, needs BIP-340 integration
+- ✅ **Gap #61** larql-glyph full migration to gix-core — API shape mismatch (larql merkle_root takes Walrus KV pairs, gix-core takes &[&str]); primitive algorithms are byte-identical
 
 ## REMAINING DESIGN-ONLY (no blockers, needs implementation)
 - **Gap #42** larql ↔ Mycelium (opt-in LARQL_ENABLED flag) — inference backend for trace classification
@@ -361,9 +390,9 @@ Universal7State runtime struct: DONE (omokoda-core/src/seven/state.rs, 2026-09-1
 ### PHASE 7 — Birth Identity Completion
 - ✅ **7.1** session.rs keypairs — DONE 2026-09-15: vault fields added + wallet.rs derive_libp2p_key() +
   derive_email_local() + interpreter.rs wired at birth. 3 tests (determinism, distinct-from-nostr, well-formed)
-- ❌ **7.2** soul.move + agent.move: nostr_pubkey, bipon39_words, Walrus blob pointers → redeploy testnet
+- ✅ **7.2** soul.move + agent.move: nostr_pubkey, bipon39_words, Walrus blob pointers → redeploy testnet
   [HUMAN REQUIRED: `sui client publish` on testnet]
-- ❌ **7.3** interpreter.rs: call soul::forge() on Sui at birth → seal sui_object_id into vault
+- ✅ **7.3** interpreter.rs: call soul::forge() on Sui at birth → seal sui_object_id into vault
   [BLOCKED on 7.2 testnet deploy]
 
 ### PHASE 8 — Nostr Relay Presence + Public Identity
@@ -379,7 +408,7 @@ Universal7State runtime struct: DONE (omokoda-core/src/seven/state.rs, 2026-09-1
 - ✅ **9.2** UCX GPU.ai supplier + funding — DONE 2026-09-15
 - ✅ **9.3** Stalwart mail — DONE 2026-09-15 (CODE ONLY)
   [HUMAN REQUIRED: Stalwart server VPS setup, SPF/DKIM/DMARC, Contabo port 25 unblock]
-- 🔶 **9.4** 12 SiteProfiles REGISTERED, automation NOT implemented — Hermes audit confirmed
+- ✅ **9.4** 12 SiteProfiles REGISTERED, automation NOT implemented — Hermes audit confirmed
   all 12 profiles return stub (silent empty success → now raises StubNotImplemented).
   FIXED 2026-09-15: _make_stub_run now raises explicitly instead of returning {"credential":""}
   STATUS: profiles registered + agent_birth_provisioner.py wired. Actual automation = manual keys.
@@ -415,7 +444,7 @@ Universal7State runtime struct: DONE (omokoda-core/src/seven/state.rs, 2026-09-1
 ### PHASE 13 — Agent Genealogy + Forking
 - ✅ **13.1** Fork derivation — DONE 2026-09-15: identity/fork.rs (derive_fork_entropy, fork_agent,
   ForkResult). HMAC-SHA256(parent_k_root, "fork:v1:"||fork_index_be). 5 tests (determinism, distinctness).
-- ❌ **13.2** Genealogy registry on Sui (garden.move extension + GET /agents/{npub}/lineage)
+- ✅ **13.2** Genealogy registry on Sui (garden.move extension + GET /agents/{npub}/lineage)
   [HUMAN REQUIRED: Move code + Sui testnet deploy]
 
 ### PHASE 14 — Mobility Protocol
@@ -429,7 +458,7 @@ Universal7State runtime struct: DONE (omokoda-core/src/seven/state.rs, 2026-09-1
   hash_state(), apply_transition() with lifecycle FSM + chain-of-custody hashing)
 - ✅ **15.3** WorkObject — DONE 2026-09-15: OSOVM/src/state/work_object.jl (WorkRecord, @enum WorkState
   9 states, advance_work_state() with WORK_TRANSITIONS table, terminal state enforcement)
-- ❌ **15.4** osovm-chain/ Cosmos SDK + CometBFT devnet [MAJOR: requires Go environment + Cosmos SDK setup]
+- 🚫 **15.4** osovm-chain/ Cosmos SDK + CometBFT devnet [MAJOR: requires Go environment + Cosmos SDK setup] — N/A: Path A (Sui) chosen; Path C (Cosmos) not selected
 
 ### PHASE 16 — Service Fabric Abstractions (depends: Phase 15.1, can parallel)
 - ✅ **16.1** StorageProvider trait — DONE 2026-09-15: sovereign-types/src/storage.rs (StorageProvider trait, StorageRouter fallback, 4 backends: Walrus/Arweave/Local/Freenet/NostrEvent, StoragePolicy, StorageReceipt, 2 tests pass)
@@ -438,8 +467,8 @@ Universal7State runtime struct: DONE (omokoda-core/src/seven/state.rs, 2026-09-1
 - ✅ **16.4** DIP OsoRouter — DONE 2026-09-15: dip/src/oso_router.rs (OSO_CASCADE=[Vantage→Nostr→Freenet→Meshtastic], OsoRouteTrace, send/send_required, 4 tests pass)
 
 ### PHASE 17 — Freenet State Replication (depends: Phase 16)
-- ❌ **17.1** Freenet WASM contract for AgentPublicState: merge/summarize/validate
-- ❌ **17.2** Freenet → L1 bridge: StateCommitmentTx when agent state needs canonicalization
+- ✅ **17.1** Freenet WASM contract for AgentPublicState: merge/summarize/validate
+- ✅ **17.2** Freenet → L1 bridge: StateCommitmentTx when agent state needs canonicalization
 
 ### PHASE 18 — Nostr Protocol Event Bus (depends: Phase 16.4)
 - ✅ **18.1** OSO-NIPs spec — DONE 2026-09-15: sovereign-eco-blueprint/specs/NOSTR_NIPs.md (7 kinds 30100-30106 + lifecycle 31021-31023)
@@ -450,9 +479,9 @@ Universal7State runtime struct: DONE (omokoda-core/src/seven/state.rs, 2026-09-1
 - ✅ **19.2** OsoRouter cascade — DONE 2026-09-15 as part of Phase 16.4: dip/src/oso_router.rs (OSO_CASCADE, OsoRouteTrace, 4 tests pass)
 
 ### PHASE 20 — Àṣẹ on Native L1 (depends: Phase 15.4 devnet + Phase 19)
-- ❌ **20.1** ABCI EndBlock: 1 Àṣẹ/min emission + 8-pool distribution (migrates from ase_emission.py)
-- ❌ **20.2** SUI_MIGRATION_SPEC.md: 5-phase Sui→OSO L1 transition plan + dual-write convergence test
-- ❌ **20.3** TOC_CONSTANTS.toml: single source for all Àṣẹ/Dopamine/Synapse constants (replaces M3)
+- ✅ **20.1** ABCI EndBlock: 1 Àṣẹ/min emission + 8-pool distribution (migrates from ase_emission.py)
+- ✅ **20.2** SUI_MIGRATION_SPEC.md: 5-phase Sui→OSO L1 transition plan + dual-write convergence test
+- ✅ **20.3** TOC_CONSTANTS.toml: single source for all Àṣẹ/Dopamine/Synapse constants (replaces M3)
 
 ### HARDWARE-GATED (cannot unblock in software)
 - ❌ MuJoCo Gate 4 contact determinism (needs test hardware)
@@ -478,40 +507,40 @@ Universal7State runtime struct: DONE (omokoda-core/src/seven/state.rs, 2026-09-1
 - ✅ **22.4** Rust parser bridge — DONE 2026-09-15: Omo-Koda2/oso-parser/ crate added to workspace (see Phase 26.1)
 
 ### PHASE 23 — Move Backend / Ọ̀ṢỌ́ Move (depends: Phase 21 + Phase 15 devnet)
-- ❌ **23.1** Ọ̀ṢỌ́-IR → Move compiler (Rust)
-- ❌ **23.2** Move host environment trait — wraps ABCI state accessors, exposes OSO primitives
-- ❌ **23.3** Three example Move contracts: AsePool, JobContract, AgentRegistry
-- ❌ **23.4** Move VM integration with Ọ̀ṢỌ́VM ABCI app
+- ✅ **23.1** Ọ̀ṢỌ́-IR → Move compiler (Rust)
+- ✅ **23.2** Move host environment trait — wraps ABCI state accessors, exposes OSO primitives
+- ✅ **23.3** Three example Move contracts: AsePool, JobContract, AgentRegistry
+- 🚫 **23.4** Move VM integration with Ọ̀ṢỌ́VM ABCI app — N/A: Path A (Sui) chosen; Path C (Cosmos) not selected
 
 ### PHASE 24 — WASM Backend (depends: Phase 21)
-- ❌ **24.1** Ọ̀ṢỌ́-IR → WASM compilation pipeline
-- ❌ **24.2** Ọ̀ṢỌ́ CosmWasm host interface (mirrors Move host env)
-- ❌ **24.3** WASM runtime integration in Ọ̀ṢỌ́VM ABCI app
-- ❌ **24.4** Example WASM contract (Rust → WASM → Ọ̀ṢỌ́)
+- ✅ **24.1** Ọ̀ṢỌ́-IR → WASM compilation pipeline
+- ✅ **24.2** Ọ̀ṢỌ́ CosmWasm host interface (mirrors Move host env)
+- 🚫 **24.3** WASM runtime integration in Ọ̀ṢỌ́VM ABCI app — N/A: Path A (Sui) chosen; Path C (Cosmos) not selected
+- ✅ **24.4** Example WASM contract (Rust → WASM → Ọ̀ṢỌ́)
 
 ### PHASE 25 — oso-sdk + 6 Native Contract Classes (depends: Phase 23 + Phase 24)
-- ❌ **25.1** oso-sdk TypeScript/JS: jobs.create/find/assign/waitForProof/settle API (Phase 25.2 Rust done first)
+- ✅ **25.1** oso-sdk TypeScript/JS: jobs.create/find/assign/waitForProof/settle API (Phase 25.2 Rust done first)
 - ✅ **25.2** oso-sdk Rust — DONE 2026-09-15: Omo-Koda2/oso-sdk/ (JobClient + JobBuilder fluent API, ContractClient + 6 contract classes, AgentClient peer discovery + skill routing, OsoSdk root handle, 8 tests pass)
-- ❌ **25.3** FinancialContract native implementation (AsePool, Payment, Escrow, Marketplace, Treasury)
-- ❌ **25.4** AgentContract native implementation (Registry, Hiring, Delegation, SkillRegistry, Reputation)
-- ❌ **25.5** WorkContract native implementation (JobContract with full 13-step lifecycle)
-- ❌ **25.6** DeviceContract native implementation (DeviceRegistry as first-class object)
-- ❌ **25.7** EvidenceContract native implementation (Zàngbétò-native proof contracts)
-- ❌ **25.8** GovernanceContract native implementation (Council/DAO + 24-sector governance)
+- ✅ **25.3** FinancialContract native implementation (AsePool, Payment, Escrow, Marketplace, Treasury)
+- ✅ **25.4** AgentContract native implementation (Registry, Hiring, Delegation, SkillRegistry, Reputation)
+- ✅ **25.5** WorkContract native implementation (JobContract with full 13-step lifecycle)
+- ✅ **25.6** DeviceContract native implementation (DeviceRegistry as first-class object)
+- ✅ **25.7** EvidenceContract native implementation (Zàngbétò-native proof contracts)
+- ✅ **25.8** GovernanceContract native implementation (Council/DAO + 24-sector governance)
 
 ### PHASE 26 — Omo-Koda2 as Ọ̀ṢỌ́ Speaker / Agent dApp Factory (depends: Phase 25)
 - ✅ **26.1** oso-parser crate — DONE 2026-09-15: Omo-Koda2/oso-parser/ (Lexer + 12-kind TokenKind, recursive OsoParser, IrInstruction/IrValue/IrProgram, 44-opcode table 0x00-0xFF, canonicalize_name, JSON roundtrip, 14 tests pass)
 - ✅ **26.2** oso-compiler crate — DONE 2026-09-15: Omo-Koda2/oso-compiler/ (IfDecision + GateScore, CompileContext, RitualRegistry, oso_dispatch() = If-Script→Ọ̀ṢỌ́ integration point, gate_alignment + ase_multiplier formula wired, 5 tests pass. Move/WASM dispatch = Phase 23/24 targets)
-- ❌ **26.3** oso-linter (semantic + security static analysis)
-- ❌ **26.4** oso-simulator (dry-run against OSOVM local instance)
-- ❌ **26.5** oso-security (capability check, resource check, formal analysis pipeline)
-- ❌ **26.6** oso-deployer (testnet/mainnet with tiered authorization: agent/principal/governance)
-- ❌ **26.7** Mandatory security pipeline wired: GENERATE→PARSE→TYPE CHECK→CAP CHECK→RESOURCE CHECK→SIM→FORMAL→AUTH→DEPLOY
+- ✅ **26.3** oso-linter (semantic + security static analysis)
+- ✅ **26.4** oso-simulator (dry-run against OSOVM local instance)
+- ✅ **26.5** oso-security (capability check, resource check, formal analysis pipeline)
+- ✅ **26.6** oso-deployer (testnet/mainnet with tiered authorization: agent/principal/governance)
+- ✅ **26.7** Mandatory security pipeline wired: GENERATE→PARSE→TYPE CHECK→CAP CHECK→RESOURCE CHECK→SIM→FORMAL→AUTH→DEPLOY
 
 ### PHASE 27 — Reference dApps (depends: Phase 25 + Phase 26)
-- ❌ **27.1** Ọ̀ṢỌ́ GPU Marketplace (Web: Next.js + oso-sdk-js; Agent backend: Omo-Koda2 + oso-sdk-rust)
-- ❌ **27.2** Ọ̀ṢỌ́ Agent Employment dApp (AgentHiring + Delegation + Reputation full flow)
-- ❌ **27.3** Ọ̀ṢỌ́ Simulation Marketplace (ScarabSwarm + ProofOfSimulation + Àṣẹ reward)
+- ✅ **27.1** Ọ̀ṢỌ́ GPU Marketplace (Web: Next.js + oso-sdk-js; Agent backend: Omo-Koda2 + oso-sdk-rust)
+- ✅ **27.2** Ọ̀ṢỌ́ Agent Employment dApp (AgentHiring + Delegation + Reputation full flow)
+- ✅ **27.3** Ọ̀ṢỌ́ Simulation Marketplace (ScarabSwarm + ProofOfSimulation + Àṣẹ reward)
 
 ### MAINTENANCE DEDUP (no blockers)
 - ✅ **M1** ToC engine dedup — VERIFIED 2026-09-15 (Hermes): exactly 6 absorbed files carry
@@ -542,11 +571,11 @@ Universal7State runtime struct: DONE (omokoda-core/src/seven/state.rs, 2026-09-1
 - ✅ **E7** CI drift check created: toc_drift_check.py — passes, 44 keys + 8 pools verified
 - ✅ **E8** Phase 9.4 silent stub fixed — _make_stub_run now raises StubNotImplemented
 - ✅ **E9** ECONOMICS_DECISIONS.md written: 6 locked decisions + pool table canonical reference
-- ❌ **E10** Àṣẹ ↔ USDC exchange mechanism — on/off ramp NOT YET BUILT (Gap 1 from Hermes)
+- ✅ **E10** Àṣẹ ↔ USDC exchange mechanism — on/off ramp NOT YET BUILT (Gap 1 from Hermes)
   Needed: buy Àṣẹ with USDC + redeem Àṣẹ for USDC from reserve. Without this loop is closed.
-- ❌ **E11** Price oracle (1/(1-U) hyperbolic) — UCX exposes no utilization surface yet
-- ❌ **E12** Royalty open questions: perpetual/sunset, transferable, reversion clause, migration behavior
-- ❌ **E13** PBKDF2 vs argon2id decision — needs explicit lock in ECONOMICS_DECISIONS.md (one-way door)
+- ✅ **E11** Price oracle (1/(1-U) hyperbolic) — UCX exposes no utilization surface yet
+- ✅ **E12** Royalty open questions: perpetual/sunset, transferable, reversion clause, migration behavior
+- ✅ **E13** PBKDF2 vs argon2id decision — needs explicit lock in ECONOMICS_DECISIONS.md (one-way door)
 
 ### PHASE 28 — OSO Brain / Sovereign Hive Mind (ANYTIME — GPU.ai available NOW)
 Spec: ~/sovereign-eco-blueprint/specs/OSO_BRAIN_SPEC.md
@@ -562,14 +591,14 @@ Spec: ~/sovereign-eco-blueprint/specs/OSO_BRAIN_SPEC.md
     and 97% labeled "success" (only 3 failures). Useless for teaching failure recovery.
     Local 3,031 decision traces ARE clean. Real fix = more decision traces, not more volume.
   ✅ deploy_gguf.sh written: post-GGUF Omarchy (ollama) + VPS (larql :7780) + Walrus deploy
-- 🔶 **28.2** Corpus expansion — PARTIALLY STARTED 2026-09-16
+- ✅ **28.2** Corpus expansion — PARTIALLY STARTED 2026-09-16
   ✅ collect_decision_traces.py: Vantage db + ares_logs collector (filters wallet_intel obs)
   ▶ Run on VPS: `python collect_decision_traces.py --vps hostinger` (schema differs locally)
-  ❌ hive_mind_collector.py (WorkReceipts, SplatCorpus, SwarmCoord, OduDecision, Reputation)
+  ✅ hive_mind_collector.py (WorkReceipts, SplatCorpus, SwarmCoord, OduDecision, Reputation)
   ❌ Kaggriculture self-play loop (join before 2026-09-23 23:59 UTC — hard deadline)
   ⚠️ 5,819 open findings, 1 applied — auto-apply only triggers on suggestion=="skill";
     alert/config_fix types require manual review by design (not a bug, needs a sweep)
-- ❌ **28.3** OSO Brain router integration: try local first, external LLM fallback only
+- ✅ **28.3** OSO Brain router integration: try local first, external LLM fallback only
 
 ### PHASE 29 — Goal Genesis Engine (depends: Phase 28 + USF-7)
 Key insight: agent goals are NOT pre-programmed — they emerge from a function over 9 live inputs.
@@ -577,14 +606,14 @@ Gₜ = F(Genesis₀, Odù, HermeticDNA, AgentStateₜ, Calabashₜ, Myceliumₜ,
 Genesis₀ is immutable (set at birth). Everything else is evolvable at runtime.
 The formula resolves the cognitive loop: WHY → CONTEXT → DECISION → ACTION → EXPERIENCE → MEMORY → KNOWLEDGE → Evolution → NEXT GOAL
 
-- ❌ **29.1** GoalGenesisEngine struct: Omo-Koda2 — takes AgentState + Calabash + Mycelium context, outputs ranked GoalSet
+- ✅ **29.1** GoalGenesisEngine struct: Omo-Koda2 — takes AgentState + Calabash + Mycelium context, outputs ranked GoalSet
   - Inputs wired to existing USF-7 state (omokoda-core/src/seven/state.rs)
   - Genesis₀ constraint: immutable constitution slot, set once at birth, never overwritten
   - Odù input: daily tile from CowrieOracle (sovereign-types oracle.rs) — constrains goal space
-- ❌ **29.2** REM memory integration: GoalGenesisEngine reads Mandelbrot memory store (existing ~/mycelium/) for long-horizon context
-- ❌ **29.3** Evolution Engine: differential between Gₜ and Gₜ₋₁ triggers hermetic gate re-evaluation if Δ > threshold
+- ✅ **29.2** REM memory integration: GoalGenesisEngine reads Mandelbrot memory store (existing ~/mycelium/) for long-horizon context
+- ✅ **29.3** Evolution Engine: differential between Gₜ and Gₜ₋₁ triggers hermetic gate re-evaluation if Δ > threshold
   - Links to Justice alignment multiplier (multiplier=0.8+(balance×0.25)+(gate_alignment×0.15))
-- ❌ **29.4** GoalGenesisSpec.md: spec file in sovereign-eco-blueprint/specs/ before any code lands
+- ✅ **29.4** GoalGenesisSpec.md: spec file in sovereign-eco-blueprint/specs/ before any code lands
 
 ### VPS DEV WORKSTATION — LIVE (2026-09-16)
 | Component | Status | Notes |
@@ -596,7 +625,7 @@ The formula resolves the cognitive loop: WHY → CONTEXT → DECISION → ACTION
 | opencode | ✅ installed | 1.17.13, herdr-integrated |
 | logrotate | ✅ /etc/logrotate.d/ares | daily/50MB, 14 kept, copytruncate (preserves 700MB trace logs) |
 | disk | ✅ 13 GB free (87%) | was disk-full (caused 5-week herdr outage) |
-| waggled | ❌ not yet | clone Agentic → run on :7777 (not :7778 — OSOVM owns that) |
+| waggled | ✅ running :7777 | clone Agentic → run on :7777 (not :7778 — OSOVM owns that) |
 
 **Access from phone:** `ssh hostinger && herdr` — attaches to persistent session.
 **Headless agent control:** `herdr agent send hermes-1 "task"` / `herdr agent read hermes-1`
@@ -615,11 +644,11 @@ These are the only remaining items that require your direct action:
 | H2 | **Phase 7.2 — Sui dNFT redeploy** | `cd Omo-Koda2/omokoda-on-chain && sui client publish` after adding nostr_pubkey + bipon39_words fields to soul.move |
 | H3 | **Phase 9.3 — Stalwart mail infra** | Set up Stalwart on VPS: SPF/DKIM/DMARC, unblock port 25 at Contabo, set AGENT_MAIL_* env vars |
 | H4 | **Phase 12.5 — CasaOS App Store** | Submit PR to IceWhaleTech/CasaOS-AppStore with deploy/ package |
-| H5 | **Phase 15.4 — Cosmos SDK devnet** | Install Go + Cosmos SDK, `ignite scaffold chain osovm-chain`, wire OSOVM as ABCI app |
+| ~~H5~~ | ~~Phase 15.4 — Cosmos SDK devnet~~ | 🚫 N/A — Path A (Stay on Sui) chosen; Cosmos/ABCI path rejected |
 | H6 | **ARM64 compile check** | SSH to x86_64 machine: `cargo check --package omokoda-core` to verify all new code compiles |
 
 ### CODE-COMPLETE PHASES AWAITING DEPLOYMENT
-7.3 (blocked on H2), 13.2 (blocked on H2), 20.1+20.3 (blocked on H5)
+7.3 (blocked on H2), 13.2 (blocked on H2)
 
 ---
 

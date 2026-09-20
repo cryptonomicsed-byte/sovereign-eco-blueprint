@@ -358,7 +358,13 @@ Legend: ✅ done · 🔶 partial · ❌ missing · 🗄️ archived · 🪞 mirr
 - ✅ **main.rs wired** — `JsonFileBackend::from_env()` at startup; falls back to empty engine with warning on corrupted file; `with_graceful_shutdown` for clean exit.
 - ✅ **Crash-recovery tests** — stale `.tmp` doesn't corrupt load; first-boot on missing files returns empty engine (not error). 12 tests total. VCP commit: `9c6d8b2`
 
-### 8B — TODO (Graph/Index Authority: Gix1Index ↔ GlyphGraph relationship, canonical object lookup, ownership/produced/session/derives edges at agent level)
+### 8B — ✅ COMPLETE (2026-09-19)
+- ✅ **CanonicalObjectStore** — combines `Gix1Index` (identity) + `GlyphGraph` (topology) with single mutation path. `insert_object(env)` stamps both structures with the identical `canonical_id`. `add_edge()` enforces both endpoints exist in index before inserting. GIX commit: `082b043`
+- ✅ **Double-hash bug fixed** — `session_composite_gix1` was calling `GlyphNode::from_chunk(&device_hex)` which re-hashed an already-hashed ID. Now calls `store.insert_object(env)` — graph node canonical_id == index canonical_id. VCP commit: `c33724b`
+- ✅ **GixSnapshotMeta** — shared `snapshot_id` across graph.json/index.json/snapshot.json; `entry_count` cross-check detects epoch skew between paired files on load.
+- ✅ **audit_consistency()** — verifies: index Merkle root, ∀ graph node N ∈ index, ∀ edge endpoint ∈ index, schema version. Runs automatically on load before store is returned.
+- ✅ **with_storage() restores BOTH** — `Gix1Index` + `GlyphGraph` now restored together; audit runs before broker accepts sessions.
+- ✅ **8B.8 integration test** — `vcp_session_survives_restart_with_full_store`: create session → flush → simulate restart → load → audit → walk device→receipt. 14 VCP tests + 24 GIX tests passing.
 ### 8C — TODO (minipae Bridge: Memory → GIX envelope → minipae locator, provenance/visibility/content_hash/supersedes/derived_from/REM lineage)
 ### 8D — TODO (REM/GIX first-class: GixFold with algorithm/fractal_dimension/member_count/input_root/children/parent; LARQL WALK fold→children)
 ### 8E — TODO (Vantage Federation: GIX discovery, graph projection, private/public boundary, agent identity resolution via GIX)

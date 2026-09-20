@@ -350,6 +350,21 @@ Legend: ✅ done · 🔶 partial · ❌ missing · 🗄️ archived · 🪞 mirr
 - ✅ **GlyphGraph persistence** — `Serialize/Deserialize` added; `save(path)` + `load(path)` atomic write. 3 tests. GIX commit: `89445bf`
 - ✅ **VCP broker wired** — `save_graph(path)` / `load_graph_from(path)` on `HandshakeEngine`; lock-safe; 2 tests. VCP commit: `22f4d07`
 
+## GIX Phase 8 — Runtime Persistence + Authority
+
+### 8A — ✅ COMPLETE (2026-09-19)
+- ✅ **StorageBackend trait** — `load/save_graph` + `load/save_index`; `JsonFileBackend` reads `VCP_GRAPH_PATH`/`VCP_INDEX_PATH` env vars, atomic `.tmp→rename` writes. `NullBackend` for in-memory tests.
+- ✅ **HandshakeEngine::with_storage(backend)** — loads prior GlyphGraph on startup; `flush_graph()` persists after every `vcp_session` edge; graceful shutdown via `ctrl_c` calls final checkpoint flush.
+- ✅ **main.rs wired** — `JsonFileBackend::from_env()` at startup; falls back to empty engine with warning on corrupted file; `with_graceful_shutdown` for clean exit.
+- ✅ **Crash-recovery tests** — stale `.tmp` doesn't corrupt load; first-boot on missing files returns empty engine (not error). 12 tests total. VCP commit: `9c6d8b2`
+
+### 8B — TODO (Graph/Index Authority: Gix1Index ↔ GlyphGraph relationship, canonical object lookup, ownership/produced/session/derives edges at agent level)
+### 8C — TODO (minipae Bridge: Memory → GIX envelope → minipae locator, provenance/visibility/content_hash/supersedes/derived_from/REM lineage)
+### 8D — TODO (REM/GIX first-class: GixFold with algorithm/fractal_dimension/member_count/input_root/children/parent; LARQL WALK fold→children)
+### 8E — TODO (Vantage Federation: GIX discovery, graph projection, private/public boundary, agent identity resolution via GIX)
+### 8F — TODO (Crash/Recovery Testing: kill broker → restart → verify; corrupted file → fail closed; interrupted write → previous valid graph)
+### 8G — TODO (Integration Tests: Omo-Koda2 ↔ Triune-Memory ↔ GIX ↔ minipae ↔ Nostr ↔ Vantage full stack)
+
 ## REMAINING BLOCKED / EXTERNAL (cannot unblock in software)
 - ❌ **Gap #49** omokoda-mesh-firmware ↔ DIP — C++ ESP32 firmware; needs DIP HTTP call added. Skip until hardware testing.
 - ❌ **Gap #67** OSOVM Gate 4 (MuJoCo contact determinism) — hardware/solver test required

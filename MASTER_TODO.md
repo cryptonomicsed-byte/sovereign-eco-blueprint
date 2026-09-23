@@ -1,8 +1,9 @@
 # Sovereign Stack — Master Build Checklist
-**Last audited: 2026-09-16 (session 5 — VPS herdr setup, corpus findings, 28.2 collector). Single source of truth — update here.**
+**Last audited: 2026-09-23 (forensic audit — all 37 repos, 11 parallel agents, 4,322-line report). Single source of truth — update here.**
 **All repos: github.com/cryptonomicsed-byte**
+**Audit report:** `plans/ecosystem-audit/ECOSYSTEM_AUDIT_INDEX.md` · `Omo-Koda2/docs/audit/OmoKoda_Full_Audit_Report.md`
 
-Legend: ✅ done · 🔶 partial · ❌ missing · 🗄️ archived · 🪞 mirror/migrated
+Legend: ✅ done · 🔶 partial · ❌ missing · 🗄️ archived · 🪞 mirror/migrated · ☐ todo (audit finding)
 
 ---
 
@@ -365,11 +366,47 @@ Legend: ✅ done · 🔶 partial · ❌ missing · 🗄️ archived · 🪞 mirr
 - ✅ **audit_consistency()** — verifies: index Merkle root, ∀ graph node N ∈ index, ∀ edge endpoint ∈ index, schema version. Runs automatically on load before store is returned.
 - ✅ **with_storage() restores BOTH** — `Gix1Index` + `GlyphGraph` now restored together; audit runs before broker accepts sessions.
 - ✅ **8B.8 integration test** — `vcp_session_survives_restart_with_full_store`: create session → flush → simulate restart → load → audit → walk device→receipt. 14 VCP tests + 24 GIX tests passing.
-### 8C — TODO (minipae Bridge: Memory → GIX envelope → minipae locator, provenance/visibility/content_hash/supersedes/derived_from/REM lineage)
-### 8D — TODO (REM/GIX first-class: GixFold with algorithm/fractal_dimension/member_count/input_root/children/parent; LARQL WALK fold→children)
-### 8E — TODO (Vantage Federation: GIX discovery, graph projection, private/public boundary, agent identity resolution via GIX)
-### 8F — TODO (Crash/Recovery Testing: kill broker → restart → verify; corrupted file → fail closed; interrupted write → previous valid graph)
-### 8G — TODO (Integration Tests: Omo-Koda2 ↔ Triune-Memory ↔ GIX ↔ minipae ↔ Nostr ↔ Vantage full stack)
+### 8C — ✅ COMPLETE (2026-09-19)
+- ✅ **GixVisibility** — `Public / Private / Shared(group_id)` visibility policy enum in gix-types
+- ✅ **GixProvenance** — `{content_hash, supersedes, derived_from, fold_lineage, visibility}` + `fingerprint()` → `[u8;32]` for stamping onto `Gix1.provenance` field
+- ✅ **GixMinipaeLocator** — `{canonical_id, agent_pubkey, slug:"mem/<id>", relay_hint}` with `from_canonical_id()` + `from_gix1()` constructors
+- ✅ **CanonicalObjectStore.insert_memory()** — inserts `Gix1` envelope + registers `GixMinipaeLocator` in one step; `register_locator()` + `resolve_locator()` for locator lifecycle
+- ✅ **Locator persistence model** — `locators` field is in-memory only (`#[serde(skip)]`); agents re-register on restart when they re-publish to minipae bus (fail-open design)
+- ✅ **Omo-Koda2 bridge functions** — `entry_to_minipae_locator(entry, tier, pubkey, relay)` + `entry_with_provenance(entry, tier, supersedes, derived_from)` in `gix_bridge.rs`
+- ✅ **4 new tests** — slug determinism, provenance fingerprint stamping, lineage tracking, insert_memory store round-trip. GIX commit: `941f505` · Omo-Koda2 commit: `e866635`
+### 8D — ✅ COMPLETE (2026-09-19)
+- ✅ **FoldAlgorithm** enum: `Rem / Semantic / Temporal / Manual / Custom` — all serde(default) on GixFold for backward compat
+- ✅ **GixFold extended** — 6 new fields: `algorithm`, `fractal_dimension` (1.0=flat, →2.0=deep), `member_count`, `input_root` (Merkle root of sources before folding, verifiable), `children` (Gix1 envelope canonical_ids of nested child folds), `parent` (parent fold canonical_id if re-folded)
+- ✅ **GixFold::from_child_folds()** — `sources=fold.id` (for gix_fold_v1 identity), `children=SHA-256(fold.id)` (Gix1 envelope keys matching store); accumulates member_count; fractal_dimension > 1.0
+- ✅ **Builder methods** — `with_parent()`, `with_algorithm()`, `with_fractal_dimension()`, `verify_input_root()`, `fold_sources_merkle_root()`
+- ✅ **CanonicalObjectStore::insert_fold()** — inserts Gix1 envelope + wires `fold_source`/`fold_child`/`fold_parent` edges; `walk_fold_children()` BFS over `fold_child` edges
+- ✅ **larql-glyph: walk_folds()** — directed BFS following `fold_child` edges (from→to only); `walk_by_relation(start, rel, directed)` general form
+- ✅ **11 new tests** (7 GIX + 4 larql-glyph). GIX commit: `9f467c4` · larql commit: `71df49ab`
+### 8E — DONE (Vantage Federation: GIX discovery, graph projection, private/public boundary, agent identity resolution via GIX)
+- ✅ `StoreProjection` + `GixAgentProjection` in `gix-core/src/projection.rs`
+- ✅ `GixVisibility` override map on `CanonicalObjectStore`: `set_visibility`, `get_visibility`, `project_public`, `project_shared`
+- ✅ `POST /api/glyphs/projection` stateless endpoint in Vantage (validates hex, sorts, Merkle root, optional agent fingerprint)
+- ✅ 39 tests pass (gix-core); Vantage syntax verified
+### 8F — DONE (Crash/Recovery Testing: kill broker → restart → verify; corrupted file → fail closed; interrupted write → previous valid graph)
+- ✅ `corrupted_graph_json_fails_closed` — invalid JSON → Err
+- ✅ `corrupted_index_json_fails_closed` — bad schema → Err
+- ✅ `interrupted_write_stale_tmp_is_ignored` — .tmp file left over → real graph used
+- ✅ `partial_epoch_graph_ahead_of_index_fails_closed` — graph.json written, index.json stale → audit detects orphan → Err
+- ✅ `tampered_index_merkle_root_rejected_at_store_load` — end-to-end tamper detection
+- ✅ `deleted_snapshot_manifest_triggers_graceful_regeneration` — snapshot.json missing → loads cleanly
+- ✅ `multiple_restart_cycles_are_stable` — 3 save/load/audit cycles, IDs + edge count preserved
+- 46 store tests + 19 other gix-core tests pass (65 total)
+### 8G — DONE (Integration Tests: Omo-Koda2 ↔ Triune-Memory ↔ GIX ↔ minipae ↔ Vantage full stack)
+- ✅ 15 integration tests in `omokoda-core/tests/gix_integration.rs`
+- ✅ memory_merkle_root determinism + audit roundtrip; stale-root detection
+- ✅ full memory lifecycle: OduEntry → entry_to_minipae_locator → insert_memory → resolve_locator
+- ✅ provenance chain: supersedes lineage, fingerprint on envelope, deterministic
+- ✅ GixFold over bridge entries: fold_source edges, hierarchical walk topology
+- ✅ visibility + StoreProjection: private/public/shared-group filtering
+- ✅ agent fingerprint: unique per agent, deterministic
+- ✅ save/load cycle with bridge-populated objects + edge topology
+- ✅ project_gix topology: follows/no-self-edges
+- ✅ merkle_proof: leaf SHA-256 and root match index.root() for all entries
 
 ## REMAINING BLOCKED / EXTERNAL (cannot unblock in software)
 - ❌ **Gap #49** omokoda-mesh-firmware ↔ DIP — C++ ESP32 firmware; needs DIP HTTP call added. Skip until hardware testing.
@@ -728,3 +765,426 @@ Commit: sovereign-eco-blueprint@5ee68c9
 - W6-03: Triune-Memory — not cloned locally
 
 ### 39 repos now in ~/archive/
+
+---
+
+## FORENSIC ECOSYSTEM AUDIT — 2026-09-22/23
+
+> **Source:** `plans/ecosystem-audit/ECOSYSTEM_AUDIT_INDEX.md` (11 group reports, 37 repos, 4,322 lines)
+> **Audit scope:** All 37 active repos catalogued. Evidence-based — every finding has file:line citation.
+> **Confidence taxonomy:** VERIFIED · IMPLEMENTED · PARTIAL · STUB · SPEC_ONLY · DEAD · BROKEN · OBSOLETE · CONFLICTING
+
+---
+
+### Repo Audit Summary (updated status after forensic audit)
+
+| Repo | Pre-Audit | Post-Audit | Key Finding |
+|---|---|---|---|
+| Omo-Koda2 | active | **IMPLEMENTED (85%)** | GoalGenesis dead; Zàngbétò stub; chain_id hardcoded |
+| OSOVM | active | **PARTIAL (25%)** | 143/160 opcodes SPEC_ONLY; Julia ARM64 broken |
+| Vantage | active | **IMPLEMENTED (70%)** | ARP receipts ephemeral; ActionReceipt unsigned; ASE pool CONFLICTING |
+| UCX | active | **IMPLEMENTED** | `zangbeto_anchor: None` silently blocks GPU→TOC_MINT |
+| VCP | active | **IMPLEMENTED** | Empty pubkey bypasses all crypto; receipts unsigned |
+| DIP | active | **BROKEN** | SipHash not SHA-256; signatures always empty; Nostr adapter discards work |
+| ARP | active | **PARTIAL** | Receipts always unsigned; ArpBridge missing in Omo-Koda2 |
+| ScarabSwarm | active | **PARTIAL** | Blocksim submission broken |
+| Witness | active | **BROKEN** | `sig: ""` on every published attestation |
+| GIX | active | **VERIFIED** | No gaps — fully implemented |
+| If-Script | active | **VERIFIED (core)** | Compiler expression parsing partial; pinned to stale git rev |
+| minipae | active | **IMPLEMENTED** | Never called from Omo-Koda2; kind:30174 not published at birth |
+| ip-layer | active | **PARTIAL** | Kinds 1901/1902 have no publisher anywhere |
+| mycelium | active | **IMPLEMENTED** | GPU.ai API key hardcoded in source |
+| mycelium-tools | active | **IMPLEMENTED** | U4/U5 SPEC_ONLY; zero tests |
+| Triune-Memory | active | **IMPLEMENTED** | minipae not bundled; concurrent multi-agent unsafe |
+| agent-phone | active | **IMPLEMENTED** | Complete island — zero imports in Omo-Koda2 or Vantage |
+| organism-core | active | **BROKEN** | Julia ARM64 broken; API routes mismatch OSOVM server.jl |
+| Axiom | active | **IMPLEMENTED** | 7 node types degrade without archived VPS services |
+| Vantage-Voice- | active | **IMPLEMENTED** | `IRANTI_MCP_CWD` hardcoded macOS path; invalid Gemini model id |
+| Zangbeto | active | **PARTIAL** | ZANGBETO_URL not set in prod; Arweave/BTC/Sui manual only |
+| omokoda-mesh-firmware | active | **PARTIAL** | NostrCryptoEngine not wired at boot |
+| Witness-firmware | active | **PARTIAL** | BIP-340 Schnorr incompatible with ecosystem Ed25519 |
+| Scarabswarm (Julia) | active | **IMPLEMENTED** | Submission target not Blocksim; veil data may be missing |
+| ares-control | active | **VERIFIED** | No gaps |
+| Twelve-thrones | active | **PARTIAL** | 10/12 models only; Arweave/Sui manual scripts; zero Vantage wiring |
+| Portent | active | **PARTIAL** | Signature verification stubbed; no on-chain program |
+| Synapse | active | **IMPLEMENTED** | Events in-browser only; no relay transport |
+| Blocksim | active | **BROKEN** | 82 lines importing non-existent modules; every endpoint crashes |
+| buzz-OG | active | **PARTIAL** | WF-08: 3 missing callsite connections |
+| omokoda-smithers | active | **PARTIAL** | MCP compliant; Vantage/Omo-Koda2 wiring cosmetic only |
+| larql | active | **PARTIAL** | Metal backend empty on non-macOS |
+| zerolang | active | **PARTIAL** | Full compiler; no active call path from interpreter |
+| agentic-waggle | active | **VERIFIED** | Lean 4 proofs; ecosystem not calling it yet |
+
+---
+
+### 🔴 CRITICAL FIXES — Must fix before meaningful operation
+
+These 14 findings block the entire system or create hard security gaps.
+
+- [ ] **E-01 / X-6** Fix Julia ARM64 non-PIE binary — `pkg install julia` or use PIE-compiled build
+  - `Repos:` OSOVM, organism-core
+  - `Evidence:` `ET_EXEC` vs `ET_DYN`; OSOVM process crashes immediately on Termux ARM64
+  - `Effort:` 1 hr (package reinstall) or 1 day (PIE compile)
+
+- [ ] **E-05 / X-1** Fix DIP `sha256_hex` to use `sha2::Sha256` not `std::collections::hash_map::DefaultHasher`
+  - `Repos:` DIP (`dip-types/src/envelope.rs:73-78`)
+  - `Evidence:` Current code uses non-cryptographic SipHash; all envelope integrity hashes are forgeable
+  - `Effort:` 2 hr — add `sha2` dep, swap hasher call
+
+- [ ] **E-06 / X-2** Implement DIP envelope Ed25519 signing + verification
+  - `Repos:` DIP (`DipEnvelope::new()` sets `signature: String::new()`)
+  - `Evidence:` Zero envelopes are ever signed; any agent can impersonate any sender
+  - `Effort:` 2 days
+
+- [ ] **E-07 / X-13** Set `ZANGBETO_URL=http://localhost:8787` in prod; deploy zangbeto-server
+  - `Repos:` Omo-Koda2 (`zangbeto-stub/src/lib.rs:24` always passes), Zangbeto
+  - `Evidence:` Real Zangbeto daemon exists at `~/Zangbeto/` port 8787; never connected in prod
+  - `Effort:` 1 day (env var + systemd unit)
+
+- [ ] **E-08 / X-14** Remove `chain_id = "testnet"` hardcode in Omo-Koda2 `interpreter.rs:1093`
+  - `Repos:` Omo-Koda2
+  - `Evidence:` All agent key derivation uses wrong chain; agents born with wrong identity
+  - `Effort:` 1 hr — parameterize from env var `CHAIN_ID`
+
+- [ ] **E-09 / X-11** Remove hardcoded GPU.ai API key from `mycelium/train_qlora.py:64`
+  - `Repos:` mycelium
+  - `Evidence:` Line 64: `api_key = "gpuai_live_yxOFo45nCboRVOU6ak8lduNJ"` in source
+  - `Effort:` 30 min — move to env var `GPUAI_API_KEY`
+
+- [ ] **E-10 / X-7** Add `zangbeto_anchor` to UCX `ComputeReceipt` before submitting
+  - `Repos:` UCX (`mint_allowlist.rs:check_mint_eligible()`)
+  - `Evidence:` `zangbeto_anchor: None` causes `check_mint_eligible()` to return false; GPU compute never earns Àṣẹ
+  - `Effort:` 1 day — UCX must call Zangbeto endpoint before finalizing receipt
+
+- [ ] **X-3** Fix Witness Nostr publisher — real Ed25519 signing, real relay WebSocket
+  - `Repos:` Witness (`nostr_publisher.rs:build_signed_event()`)
+  - `Evidence:` `pubkey: ""` and `sig: ""` on all published attestations; events discarded by any relay
+  - `Effort:` 2 days (see E-18)
+
+- [ ] **X-4** Rebuild Blocksim — create missing `chain_service` and `chain_submit` modules
+  - `Repos:` Blocksim
+  - `Evidence:` Repo is 82 lines importing modules that don't exist; every endpoint crashes on `ImportError`
+  - `Effort:` 1–2 wk (see E-04)
+
+- [ ] **X-5 / E-03** Implement 143 missing OSOVM opcode handlers (VEIL + COMPUTE_PROOF first priority)
+  - `Repos:` OSOVM (`vm_core.jl` OPCODE_HANDLERS)
+  - `Evidence:` Only 17/160 opcodes have real handlers; remaining return `NotImplemented`
+  - `Effort:` 2–4 wk
+
+- [ ] **X-8 / E-13** Persist ARP receipts in Vantage DB — fix `_emit_trade_receipt()` in `trading.py`
+  - `Repos:` Vantage, ARP
+  - `Evidence:` P0-7 fix constructs envelopes but calls only `logger.info()` — never writes to DB
+  - `Effort:` 1 day
+
+- [ ] **X-9 / E-14** Add Ed25519 signing to all `ActionReceipt.signature` fields
+  - `Repos:` ARP, Vantage, VCP, ScarabSwarm, Witness (everywhere)
+  - `Evidence:` `signature = String::new()` / `""` across all repos; receipt chain is unforgeable but unsigned
+  - `Effort:` 2–3 days
+
+- [ ] **X-10 / E-20** Align Vantage ASE pool taxonomy — reconcile `ase_emission.py` vs `sovereign_economy/emission.py`
+  - `Repos:` Vantage
+  - `Evidence:` Two routers define different pool names; only one matches `TOC_CONSTANTS.toml`; delete the wrong one
+  - `Effort:` 1 day
+
+- [ ] **X-12** Fix Omo-Koda2 ↔ DIP type mismatch — add `dip-types` as Cargo dep to omokoda-core
+  - `Repos:` Omo-Koda2, DIP
+  - `Evidence:` `omokoda-core/src/bridge/dip.rs:21-27` defines its own `DipEnvelope`; never uses `dip-types::DipEnvelope`
+  - `Effort:` 1 day — add dep + replace local struct
+
+---
+
+### 🟡 HIGH — Significant capability degradation
+
+- [ ] **H-1 / E-11** Wire GoalGenesisEngine into Omo-Koda2 `think_agentic()`
+  - `File:` `interpreter.rs` — zero references to `GoalGenesisEngine` in production path
+  - `Effort:` 1–2 days
+
+- [ ] **H-2 / E-22** Wire SOMA, CausalMemoryDag, ReflectionLedger into Omo-Koda2 Think/Act cycle
+  - `File:` `memory/soma.rs`, `memory/dag.rs`, `memory/reflection.rs` — defined but never populated
+  - `Effort:` 3–5 days
+
+- [ ] **H-3 / E-12** Wire AgentConstitution auto-sign at birth
+  - `File:` `constitution.rs` is feature-gated and never called from interpreter birth path
+  - `Effort:` 1 day
+
+- [ ] **H-4 / E-33** Add Ed25519 signatures to Omo-Koda2 heartbeat chain (currently hash-only)
+  - `File:` `lifecycle/heartbeat.rs`
+  - `Effort:` 0.5 day
+
+- [ ] **H-5 / E-16** Wire OSOVM event-bridge.js into `server.jl` for GPU_CONTRIBUTION events
+  - `File:` `event-bridge.js` — completely dead; GPU events never reach Vantage Dopamine mint
+  - `Effort:` 1 day
+
+- [ ] **H-6 / E-02** Fix organism-core API routes to match OSOVM `server.jl` paths
+  - `Evidence:` TypeScript bridges call `/api/osovm/execute`; server.jl mounts at `/api/run`; HTTP always 404
+  - `Effort:` 1 day
+
+- [ ] **H-7 / E-17** Add missing OSOVM server routes: `/api/toc/allowlist/check`, `/api/osovm/gpu_contribution`
+  - `File:` `server.jl` — UCX calls these; they don't exist
+  - `Effort:` 1 day
+
+- [ ] **H-8** Document DopaminePool as local simulation — add roadmap to on-chain settlement
+  - `Evidence:` `economics.rs` constants are local only; no on-chain accounting
+  - `Effort:` Spec update + E-46 (on-chain program)
+
+- [ ] **H-9 / E-23** Wire agent-phone into Omo-Koda2 as comms transport
+  - `Evidence:` agent-phone: zero imports anywhere in Omo-Koda2 or Vantage
+  - `Effort:` 2 days
+
+- [ ] **H-10 / E-27** Add two missing Twelve-thrones models (only 10/12 configured)
+  - `File:` `twelve-thrones/` model roster
+  - `Effort:` 1 day
+
+- [ ] **H-11** Delete/replace 4 systemd units that target archived Elixir/Go services
+  - `File:` `Omo-Koda2/systemd/*.service`
+  - `Effort:` 1 hr — replace with Rust service units
+
+- [ ] **H-12 / E-19** Wire NostrCryptoEngine at boot in `omokoda-mesh-firmware/main.cpp`
+  - `Evidence:` Crypto engine is compiled in but `.begin()` never called at init
+  - `Effort:` 1 day
+
+- [ ] **H-13 / E-36** Migrate Witness-firmware signing from BIP-340 Schnorr to Ed25519
+  - `Evidence:` Ecosystem uses Ed25519 everywhere; firmware uses Schnorr; cross-verification impossible
+  - `Effort:` 2 days
+
+- [ ] **H-14 / E-24** Fix buzz-OG WF-08 approval gate — wire 3 missing callsites
+  - `Evidence:` `create_approval()` call missing; `kind:46010` not emitted; resume handler not wired
+  - `Effort:` 1–2 days
+
+- [ ] **H-15 / E-15** Wire `minipae.write()` at agent birth — publish kind:30174 genesis engram
+  - `Evidence:` Omo-Koda2 derives key from BIPON39 but never calls any minipae write
+  - `Effort:` 1 day
+
+- [ ] **H-16** Consolidate Vantage Council of 12 — 3 disconnected implementations into one
+  - `File:` `governance.py` + 2 other files defining conflicting council logic
+  - `Effort:` 2 days
+
+---
+
+### 🟢 FOUNDATIONAL — Major capability unlocks (no blockers)
+
+- [ ] **E-11** Wire GoalGenesisEngine into `think_agentic()` (see H-1)
+  - `Files:` `goal_genesis.rs` (437 lines, fully implemented, never called), `interpreter.rs`
+
+- [ ] **E-12** Wire AgentConstitution auto-sign at birth (see H-3)
+
+- [ ] **E-13** Persist ARP receipts in Vantage DB (see X-8)
+
+- [ ] **E-14** Add Ed25519 receipt signing across all repos (see X-9)
+
+- [ ] **E-15** Wire minipae birth write (see H-15)
+
+- [ ] **E-16** Wire OSOVM event-bridge.js for GPU_CONTRIBUTION (see H-5)
+
+- [ ] **E-17** Add missing OSOVM server routes (see H-7)
+
+- [ ] **E-18** Fix Witness Nostr publisher — real signing + relay (see X-3)
+  - `File:` `nostr_publisher.rs` — swap `String::new()` for `ed25519-dalek` sign; add real relay WS
+
+- [ ] **E-19** Wire NostrCryptoEngine at boot in mesh firmware (see H-12)
+
+- [ ] **E-20** Align Vantage ASE pool taxonomy (see X-10)
+
+---
+
+### 🔗 INTEGRATION — Wire existing pieces together
+
+- [ ] **E-21** Write ArpBridge in Omo-Koda2 — wrap every think/act turn in ARP `ActionReceipt`
+  - `Files:` `omokoda-core/src/bridge/arp.rs` (currently hand-rolls its own envelope; needs to use `arp-types::ActionReceipt`)
+  - `Effort:` 2 days
+
+- [ ] **E-22** Wire SOMA, CausalMemoryDag, ReflectionLedger into Think/Act (see H-2)
+
+- [ ] **E-23** Wire agent-phone into Omo-Koda2 comms transport (see H-9)
+
+- [ ] **E-24** Fix buzz-OG WF-08 callsites (see H-14)
+
+- [ ] **E-25** Wire agentic-waggle reverse direction — Omo-Koda2 calls waggle for job coordination
+  - `Evidence:` waggle has Go+Rust client, Lean 4 proofs, Vantage endpoint; nobody calls it
+  - `Effort:` 2 days
+
+- [ ] **E-26** Wire Triune-Memory SSE subscriber in production deployment
+  - `Evidence:` SSE subscriber needs minipae on `PYTHONPATH`; not bundled in deployment
+  - `Effort:` 1 day
+
+- [ ] **E-27** Add two missing Twelve-thrones models (see H-10)
+
+- [ ] **E-28** Fix Portent signature verification — enforce secp256k1 (currently stubbed)
+  - `File:` Portent `signature_utils.py` — verification always returns True
+  - `Effort:` 1–2 days
+
+- [ ] **E-29** Wire Synapse events to buzz-OG relay transport
+  - `Evidence:` Synapse events stay in-browser; never published to Nostr relay
+  - `Effort:` 2 days
+
+- [ ] **E-30** Run mycelium QLoRA fine-tune on GPU.ai A40 — produce OSO Brain GGUF
+  - `Evidence:` 2,949 traces ready; `train_qlora.py` passes dry-run; key hardcoded (fix E-09 first)
+  - `Effort:` 1–3 days compute
+
+- [ ] **E-31** VCP: add production gate preventing empty-pubkey bypass
+  - `File:` `vcp-broker/src/crypto.rs` — devices with empty `public_key` skip all Ed25519 verification
+  - `Effort:` 4 hr
+
+- [ ] **E-32** Wire receipt signing — `signature` field exists on VCP/ARP/ScarabSwarm/Witness receipts; nobody populates it
+  - `Effort:` 1 day (after E-14 Ed25519 key management is sorted)
+
+- [ ] **E-34** Vantage: fix `_candidate_set_hash` stub — real proof-of-sim hash
+  - `File:` `vantage/backend/...` — placeholder returns zeros
+  - `Effort:` 0.5 day
+
+- [ ] **E-37** ip-layer: add kind 1901/1902 publisher at agent birth
+  - `Evidence:` Kinds defined in spec; zero publisher code anywhere in ecosystem
+  - `Effort:` 1 day
+
+- [ ] **E-38** mycelium: remove VPS IP hardcode in `gateway/main.go:81`
+  - `Evidence:` Hostinger IP literal in source; breaks federation-first design
+  - `Effort:` 1 hr — env var `MYCELIUM_GATEWAY_URL`
+
+- [ ] **E-40** Omo-Koda2: parameterize Walrus/Seal/TEE env vars in deployment guide
+  - `Evidence:` Several keys default to placeholder values in `.env.example`
+  - `Effort:` 0.5 day
+
+- [ ] **E-33** Omo-Koda2: add Ed25519 to heartbeat chain (see H-4)
+
+- [ ] **E-35** Zangbeto: automate Arweave/BTC/Sui proof scripts
+  - `Evidence:` Night Patrol is SPEC_ONLY; current proofs are manual Node.js scripts
+  - `Effort:` 3 days
+
+- [ ] **E-36** Witness-firmware: migrate to Ed25519 (see H-13)
+
+- [ ] **E-39** mycelium-tools: add test suite for U1–U3
+  - `Evidence:` 0 tests; packages published to PyPI with no coverage
+  - `Effort:` 2 days
+
+---
+
+### 🔨 HARDENING — Security and robustness
+
+- [ ] **VCP empty-pubkey gate** (`E-31`) — see above
+- [ ] **Receipt signing everywhere** (`E-32`) — see above
+- [ ] **Heartbeat Ed25519** (`E-33`) — see above
+- [ ] **Proof-of-sim hash** (`E-34`) — see above
+- [ ] **Zangbeto automation** (`E-35`) — see above
+- [ ] **Witness-firmware Ed25519** (`E-36`) — see above
+- [ ] **ip-layer publishers** (`E-37`) — see above
+- [ ] **mycelium gateway hardcode** (`E-38`) — see above
+- [ ] **mycelium-tools tests** (`E-39`) — see above
+- [ ] **Walrus/Seal/TEE env vars** (`E-40`) — see above
+
+- [ ] Fix `Vantage-Voice-` hardcoded macOS path: `IRANTI_MCP_CWD`
+  - `File:` `server.ts` — set via env var for deployment portability
+
+- [ ] Fix `Vantage-Voice-` invalid Gemini model id in orchestrator
+  - `File:` `orchestrator.ts` — model id string does not match any live Gemini API model
+
+- [ ] Fix `omokoda-smithers` Vantage/Omo-Koda2 wiring from cosmetic to functional
+  - `Evidence:` HTTP calls go to placeholder endpoints; approval gate never triggers Omo-Koda2
+
+---
+
+### 🔮 FUTURE — Hive Mind + Economy (after individual agent complete)
+
+- [ ] **E-41** HiveBreath Protocol H0–H2 (new crate)
+  - `Spec:` `project_omokoda_macro_hive_v2.md`; H0=spawn, H1=sync, H2=breath cycle
+  - `Effort:` 2–3 wk
+
+- [ ] **E-42** Mycelium collective DAG — H3 phase (shared stigmergic substrate for hive)
+  - `Effort:` 2 wk
+
+- [ ] **E-43** RitualPhase + TwelfthFace state machine — H6 phase
+  - `Effort:` 1 wk
+
+- [ ] **E-44** CollectiveIntent → GoalGenesis wire at hive level — H7 phase
+  - `Effort:` 1 wk
+
+- [ ] **E-45** ScarabSwarm simulation gate — H8 phase (sim-verified swarm consensus)
+  - `Effort:` 2 wk
+
+- [ ] **E-46** Portent on-chain program (Move or CosmWasm contract)
+  - `Evidence:` Portent Python logic real; no deployed contract; oracle agents cannot settle
+  - `Effort:` 2–3 wk
+
+- [ ] **E-47** Blocksim full rebuild — staking, MuJoCo integration, ASE reward minting
+  - `Evidence:` Current repo is 82 lines with no working code
+  - `Effort:` 3–4 wk (after E-04 + E-03)
+
+- [ ] **E-04 / X-4** Blocksim module rebuild — create `chain_service`, `chain_submit` modules
+  - `Effort:` 1–2 wk (prerequisite for E-47)
+
+- [ ] **E-48** larql → Omo-Koda2 local inference wiring (LARQL_ENABLED flag)
+  - `Evidence:` larql-glyph live GIX bridge works; Metal backend empty on non-macOS
+  - `Effort:` 1 wk
+
+- [ ] **E-49** zerolang agent edit loop integration
+  - `Evidence:` Full compiler exists; named as future eco leg in `interpreter.rs:872`; no active path
+  - `Effort:` TBD (language design decision first)
+
+- [ ] **Gap #25 / Phase 28.1** Mycelium QLoRA fine-tune (GPU.ai A40 available NOW)
+  - `Prerequisite:` Fix E-09 (remove hardcoded key) first
+  - `Effort:` 1–3 days compute; `train_qlora.py` dry-run passes
+
+---
+
+### ECOSYSTEM COMPLETENESS SCORECARD (post-audit)
+
+| Layer | Repos | % Complete | Biggest Blocker |
+|---|---|---|---|
+| Agent kernel | Omo-Koda2 | **85%** | GoalGenesis unwired; Zàngbétò stub |
+| Simulation / L1 | OSOVM, UCX, Blocksim | **25%** | Julia ARM64; 143 opcodes SPEC_ONLY; Blocksim broken |
+| Protocol connective tissue | VCP, DIP, ARP, ScarabSwarm, Witness | **55%** | DIP SipHash; unsigned receipts everywhere |
+| Identity | GIX, If-Script, minipae, BIPON39, ip-layer, Koodu | **80%** | minipae birth write gap; ip-layer 1901/1902 unpublished |
+| Hub | Vantage | **70%** | ARP receipts ephemeral; ActionReceipt unsigned; ASE CONFLICTING |
+| Agent infrastructure | mycelium, agent-phone, Axiom, Triune-Memory | **65%** | agent-phone island; mycelium hardcoded key |
+| Security / mesh | Zangbeto, firmware, ares-control | **60%** | ZANGBETO_URL not set; Nostr signing simulated |
+| Economy / governance | Twelve-thrones, Portent, Synapse, Blocksim | **30%** | Blocksim broken; Portent no on-chain; ASE not distributed |
+| Apps / tooling | buzz-OG, smithers, larql, zerolang, agentic-waggle | **70%** | buzz-OG WF-08 (3 callsites); smithers wiring cosmetic |
+| Voice | Vantage-Voice- | **85%** | Hardcoded paths; invalid model id |
+| **OVERALL** | **37 repos** | **~60%** | DIP crypto, OSOVM opcodes, receipt signing, Blocksim |
+
+---
+
+### MINIMUM VIABLE OMO-KODA2 CHECKLIST (individual agent sovereign)
+
+Complete these in order for a single agent to be fully sovereign:
+
+- [ ] E-08: Remove `chain_id = "testnet"` hardcode
+- [ ] E-07: Deploy Zangbeto + set `ZANGBETO_URL`
+- [ ] E-05: Fix DIP `sha256_hex` → real SHA-256
+- [ ] E-06: Implement DIP envelope signing
+- [ ] E-11: Wire GoalGenesisEngine into `think_agentic()`
+- [ ] E-15: Wire `minipae.write()` at birth
+- [ ] E-12: Wire AgentConstitution auto-sign
+- [ ] E-14: Ed25519 receipt signing (ARP + Vantage at minimum)
+- [ ] E-13: Persist ARP receipts in Vantage DB
+- [ ] E-33: Ed25519 heartbeat chain
+- [ ] H-3: AgentConstitution birth auto-sign
+- [ ] H-11: Remove 4 obsolete systemd units
+
+### FULL SOVEREIGN CHECKLIST (complete ecosystem operational)
+
+After MVP, these unlock the full capability stack:
+
+- [ ] E-01: Julia ARM64 fix → unblocks OSOVM + organism-core
+- [ ] E-02: Fix organism-core ↔ OSOVM API routes
+- [ ] E-03: Implement 143 OSOVM opcode handlers
+- [ ] E-04: Rebuild Blocksim modules
+- [ ] E-10: Add `zangbeto_anchor` to UCX ComputeReceipt → GPU earns Àṣẹ
+- [ ] E-09: Remove mycelium hardcoded API key → then E-30: run fine-tune
+- [ ] E-16: Wire OSOVM event-bridge.js for GPU_CONTRIBUTION
+- [ ] E-17: Add missing OSOVM server routes
+- [ ] E-18: Fix Witness real Nostr signing
+- [ ] E-19: Wire NostrCryptoEngine at mesh firmware boot
+- [ ] E-20: Reconcile Vantage ASE pool taxonomy
+- [ ] E-21: Write real ArpBridge in Omo-Koda2 (use `arp-types` not hand-rolled)
+- [ ] E-22: Wire SOMA + CausalMemoryDag + ReflectionLedger
+- [ ] E-23: Wire agent-phone into Omo-Koda2
+- [ ] E-24: Fix buzz-OG WF-08 (3 callsites)
+- [ ] E-25: Wire agentic-waggle reverse direction
+- [ ] E-28: Fix Portent signature verification
+- [ ] E-29: Wire Synapse events to relay
+- [ ] E-31: VCP empty-pubkey production gate
+- [ ] E-36: Witness-firmware Ed25519 migration
+- [ ] E-37: ip-layer kind 1901/1902 publishers
+- [ ] E-41–E-45: HiveBreath Protocol H0–H8 (hive mind phases)
+- [ ] E-46: Portent on-chain program
+- [ ] E-47: Blocksim full rebuild

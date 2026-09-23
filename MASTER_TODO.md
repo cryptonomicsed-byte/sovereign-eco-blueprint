@@ -819,17 +819,24 @@ Commit: sovereign-eco-blueprint@5ee68c9
 
 ### 🔴 CRITICAL FIXES — Must fix before meaningful operation
 
-These 14 findings block the entire system or create hard security gaps.
+These findings block the entire system or create hard security gaps.
+
+> **3 of 14 fixed 2026-09-23** (E-05 DIP SHA-256, E-09 leaked GPU.ai key, E-31 VCP empty-pubkey
+> bypass) — see the entries below and the `Exposure` note under E-09. The GPU.ai key still needs
+> rotating at the provider; scrubbing source without rotating does not close that exposure.
 
 - [ ] **E-01 / X-6** Fix Julia ARM64 non-PIE binary — `pkg install julia` or use PIE-compiled build
   - `Repos:` OSOVM, organism-core
   - `Evidence:` `ET_EXEC` vs `ET_DYN`; OSOVM process crashes immediately on Termux ARM64
   - `Effort:` 1 hr (package reinstall) or 1 day (PIE compile)
 
-- [ ] **E-05 / X-1** Fix DIP `sha256_hex` to use `sha2::Sha256` not `std::collections::hash_map::DefaultHasher`
-  - `Repos:` DIP (`dip-types/src/envelope.rs:73-78`)
-  - `Evidence:` Current code uses non-cryptographic SipHash; all envelope integrity hashes are forgeable
-  - `Effort:` 2 hr — add `sha2` dep, swap hasher call
+- [x] **E-05 / X-1** FIXED 2026-09-23 — DIP `sha256_hex` now uses `sha2::Sha256`
+  - `Repos:` DIP (`crates/dip-types/src/envelope.rs`)
+  - `Fix:` `DefaultHasher` (SipHash-1-3, double `finish()` padding 64 bits to 128) replaced with real
+    SHA-256 + `hex::encode`. `sha2 = "0.10"` added to workspace + dip-types deps.
+  - `Tests:` `sha256_hex_matches_fips_180_4_vectors` (FIPS 180-4 KAT: "" and "abc"),
+    `canonical_hash_is_32_bytes_of_hex`. 4/4 dip-types tests pass, workspace `cargo check` clean.
+  - `Commit:` DIP `1c2e1e9`
 
 - [ ] **E-06 / X-2** Implement DIP envelope Ed25519 signing + verification
   - `Repos:` DIP (`DipEnvelope::new()` sets `signature: String::new()`)
@@ -846,10 +853,23 @@ These 14 findings block the entire system or create hard security gaps.
   - `Evidence:` All agent key derivation uses wrong chain; agents born with wrong identity
   - `Effort:` 1 hr — parameterize from env var `CHAIN_ID`
 
-- [ ] **E-09 / X-11** Remove hardcoded GPU.ai API key from `mycelium/train_qlora.py:64`
-  - `Repos:` mycelium
-  - `Evidence:` Line 64: `api_key = "gpuai_live_REDACTED_ROTATE_2026-09-23"` in source
-  - `Effort:` 30 min — move to env var `GPUAI_API_KEY`
+- [x] **E-09 / X-11** SCRUBBED 2026-09-23 — key removed from source, **ROTATION STILL REQUIRED**
+  - `Repos:` mycelium, Vantage, sovereign-eco-blueprint, Omo-Koda2
+  - `Exposure (verified by fetching raw.githubusercontent.com for each public HEAD):` the live
+    key (redacted here as `gpuai_live_<REDACTED>`) was present in **9 places across 6 files in
+    4 PUBLIC repos**:
+    `mycelium/train_qlora.py`, `mycelium/submit_finetune.sh`,
+    `Vantage/backend/routers/splat_pipeline.py` (as a default fallback value, so prod silently
+    used it), `sovereign-eco-blueprint/MASTER_TODO.md`, both copies of
+    `plans|docs/audit/ecosystem/group_e_agent_infra.md`.
+  - `Fix:` all occurrences removed/redacted; `submit_finetune.sh` now
+    `${GPUAI_API_KEY:?...}`, `train_qlora.py` help text no longer prints the key,
+    `splat_pipeline.py` defaults to `""` and `_gpuai_request()` raises on an empty key.
+  - `Commits:` mycelium `da5a11c` · Vantage `52d88b7` · sovereign-eco-blueprint `597aacb` · Omo-Koda2 `841fb38`
+  - ⚠️ **STILL OPEN — HUMAN ACTION:** the key was public for an unknown period, so it must be
+    **rotated at GPU.ai**. Removing it from HEAD does not un-expose it; it also remains in git
+    history (`mycelium` commits `104a64a`, `6941518`). History purge (git-filter-repo/BFG) is
+    cosmetic-only after rotation and is NOT a substitute for rotating.
 
 - [ ] **E-10 / X-7** Add `zangbeto_anchor` to UCX `ComputeReceipt` before submitting
   - `Repos:` UCX (`mint_allowlist.rs:check_mint_eligible()`)
@@ -1021,9 +1041,21 @@ These 14 findings block the entire system or create hard security gaps.
   - `Evidence:` 2,949 traces ready; `train_qlora.py` passes dry-run; key hardcoded (fix E-09 first)
   - `Effort:` 1–3 days compute
 
-- [ ] **E-31** VCP: add production gate preventing empty-pubkey bypass
-  - `File:` `vcp-broker/src/crypto.rs` — devices with empty `public_key` skip all Ed25519 verification
-  - `Effort:` 4 hr
+- [x] **E-31** FIXED 2026-09-23 — VCP now fails closed on empty device `public_key`
+  - `File:` `vcp-broker/src/handshake_engine.rs` (not `crypto.rs` — the bypass was the
+    `if !manifest.public_key.is_empty()` guard in `handle_auth`)
+  - `Evidence:` `register_device()` accepted keyless manifests, and `handle_auth()` then skipped
+    `verify_auth_signature()` entirely for them — a keyless device obtained a capability
+    mediation with no signature at all. `vcp-types/src/devices/zima.rs` shipped a manifest
+    builder with `public_key: String::new()` whose comment claimed "broker fills in during
+    registration" — the broker never did.
+  - `Fix:` `register_device()` rejects an empty `public_key`; `handle_auth()` rejects it too
+    (defense in depth for registries restored from disk). Escape hatch is
+    `VCP_ALLOW_UNVERIFIED_DEVICES=1`, env-gated so it is visible in `ps`/systemd review, and
+    logs a warning on every use. `zima.rs` comment corrected.
+  - `Tests:` `register_device_rejects_empty_public_key`,
+    `register_device_accepts_valid_public_key`. 16/16 vcp-broker tests pass.
+  - `Commit:` VCP `9839cdb`
 
 - [ ] **E-32** Wire receipt signing — `signature` field exists on VCP/ARP/ScarabSwarm/Witness receipts; nobody populates it
   - `Effort:` 1 day (after E-14 Ed25519 key management is sorted)

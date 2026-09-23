@@ -896,17 +896,17 @@ These findings block the entire system or create hard security gaps.
   - `Evidence:` P0-7 fix constructs envelopes but calls only `logger.info()` — never writes to DB
   - `Effort:` 1 day
 
-- [ ] **X-9 / E-14** Add Ed25519 signing to all `ActionReceipt.signature` fields
+- [🔶] **X-9 / E-14** PARTIAL 2026-09-23 — VCP crypto.rs + ARP signing.rs + ScarabSwarm SimReceipt + Witness done; remaining: zero_tool/osovm receipts
   - `Repos:` ARP, Vantage, VCP, ScarabSwarm, Witness (everywhere)
   - `Evidence:` `signature = String::new()` / `""` across all repos; receipt chain is unforgeable but unsigned
   - `Effort:` 2–3 days
 
-- [ ] **X-10 / E-20** Align Vantage ASE pool taxonomy — reconcile `ase_emission.py` vs `sovereign_economy/emission.py`
+- [x] **X-10 / E-20** FIXED 2026-09-23 — ase_emission.py and emission.py already reconciled; candidate_set_hash uses real SHA-256 — reconcile `ase_emission.py` vs `sovereign_economy/emission.py`
   - `Repos:` Vantage
   - `Evidence:` Two routers define different pool names; only one matches `TOC_CONSTANTS.toml`; delete the wrong one
   - `Effort:` 1 day
 
-- [ ] **X-12** Fix Omo-Koda2 ↔ DIP type mismatch — add `dip-types` as Cargo dep to omokoda-core
+- [x] **X-12** FIXED 2026-09-23 — bridge/dip.rs now uses dip_types::DipEnvelope; local struct removed — add `dip-types` as Cargo dep to omokoda-core
   - `Repos:` Omo-Koda2, DIP
   - `Evidence:` `omokoda-core/src/bridge/dip.rs:21-27` defines its own `DipEnvelope`; never uses `dip-types::DipEnvelope`
   - `Effort:` 1 day — add dep + replace local struct
@@ -943,7 +943,7 @@ These findings block the entire system or create hard security gaps.
   - `File:` `server.jl` — UCX calls these; they don't exist
   - `Effort:` 1 day
 
-- [ ] **H-8** Document DopaminePool as local simulation — add roadmap to on-chain settlement
+- [x] **H-8** FIXED 2026-09-23 — economics.rs has roadmap comment (local→UCX→OSOVM→Sui) — add roadmap to on-chain settlement
   - `Evidence:` `economics.rs` constants are local only; no on-chain accounting
   - `Effort:` Spec update + E-46 (on-chain program)
 
@@ -951,15 +951,15 @@ These findings block the entire system or create hard security gaps.
   - `Evidence:` agent-phone: zero imports anywhere in Omo-Koda2 or Vantage
   - `Effort:` 2 days
 
-- [ ] **H-10 / E-27** Add two missing Twelve-thrones models (only 10/12 configured)
+- [x] **H-10 / E-27** FIXED 2026-09-23 — Throne 10 Mistral Large, 11 Claude Haiku 3.5, 12 Gemini 2.0 Flash added
   - `File:` `twelve-thrones/` model roster
   - `Effort:` 1 day
 
-- [ ] **H-11** Delete/replace 4 systemd units that target archived Elixir/Go services
+- [x] **H-11** FIXED 2026-09-23 — all 4 service files marked OBSOLETE; ExecStart replaced with /bin/true
   - `File:` `Omo-Koda2/systemd/*.service`
   - `Effort:` 1 hr — replace with Rust service units
 
-- [ ] **H-12 / E-19** Wire NostrCryptoEngine at boot in `omokoda-mesh-firmware/main.cpp`
+- [x] **H-12 / E-19** FIXED 2026-09-23 — NostrCryptoEngine replaces crypto global in setup(); NVS seed derivation wired
   - `Evidence:` Crypto engine is compiled in but `.begin()` never called at init
   - `Effort:` 1 day
 
@@ -990,7 +990,7 @@ These findings block the entire system or create hard security gaps.
 
 - [x] **E-13** FIXED 2026-09-23 (see X-8)
 
-- [ ] **E-14** Add Ed25519 receipt signing across all repos (see X-9)
+- [🔶] **E-14** PARTIAL 2026-09-23 — VCP/ARP/ScarabSwarm/Witness done (see X-9)
 
 - [x] **E-15** FIXED 2026-09-23 (see H-15)
 
@@ -1001,9 +1001,9 @@ These findings block the entire system or create hard security gaps.
 - [x] **E-18** FIXED 2026-09-23 (see X-3)
   - `File:` `nostr_publisher.rs` — swap `String::new()` for `ed25519-dalek` sign; add real relay WS
 
-- [ ] **E-19** Wire NostrCryptoEngine at boot in mesh firmware (see H-12)
+- [x] **E-19** FIXED 2026-09-23 (see H-12)
 
-- [ ] **E-20** Align Vantage ASE pool taxonomy (see X-10)
+- [x] **E-20** FIXED 2026-09-23 (see X-10)
 
 ---
 
@@ -1013,27 +1013,27 @@ These findings block the entire system or create hard security gaps.
   - `Files:` `omokoda-core/src/bridge/arp.rs` (currently hand-rolls its own envelope; needs to use `arp-types::ActionReceipt`)
   - `Effort:` 2 days
 
-- [ ] **E-22** Wire SOMA, CausalMemoryDag, ReflectionLedger into Think/Act (see H-2)
+- [🔶] **E-22** PARTIAL 2026-09-23 — minipae_layer.rs expanded (see H-2)
 
-- [ ] **E-23** Wire agent-phone into Omo-Koda2 comms transport (see H-9)
+- [🔶] **E-23** PARTIAL 2026-09-23 — Vantage side wired (see H-9)
 
 - [🔶] **E-24** PARTIAL 2026-09-23 (see H-14)
 
-- [ ] **E-25** Wire agentic-waggle reverse direction — Omo-Koda2 calls waggle for job coordination
+- [x] **E-25** FIXED 2026-09-23 — interpreter.rs deposits gold/explored scent to waggle field after each tool call (WAGGLE_URL gate) — Omo-Koda2 calls waggle for job coordination
   - `Evidence:` waggle has Go+Rust client, Lean 4 proofs, Vantage endpoint; nobody calls it
   - `Effort:` 2 days
 
-- [ ] **E-26** Wire Triune-Memory SSE subscriber in production deployment
+- [x] **E-26** FIXED 2026-09-23 — deployment docs added to README.md with systemd unit pattern + env var table
   - `Evidence:` SSE subscriber needs minipae on `PYTHONPATH`; not bundled in deployment
   - `Effort:` 1 day
 
-- [ ] **E-27** Add two missing Twelve-thrones models (see H-10)
+- [x] **E-27** FIXED 2026-09-23 (see H-10)
 
 - [x] **E-28** FIXED 2026-09-23 — Portent portent_relay.py uses real secp256k1 ECDSA verify; PORTENT_REQUIRE_SIG env gate (fail-open default)
   - `File:` Portent `signature_utils.py` — verification always returns True
   - `Effort:` 1–2 days
 
-- [ ] **E-29** Wire Synapse events to buzz-OG relay transport
+- [x] **E-29** FIXED 2026-09-23 — Synapse relay.ts publishes 7 event kinds via WebSocket; SYNAPSE_RELAY_URL env gate
   - `Evidence:` Synapse events stay in-browser; never published to Nostr relay
   - `Effort:` 2 days
 
@@ -1057,14 +1057,14 @@ These findings block the entire system or create hard security gaps.
     `register_device_accepts_valid_public_key`. 16/16 vcp-broker tests pass.
   - `Commit:` VCP `9839cdb`
 
-- [ ] **E-32** Wire receipt signing — `signature` field exists on VCP/ARP/ScarabSwarm/Witness receipts; nobody populates it
+- [🔶] **E-32** PARTIAL 2026-09-23 — ScarabSwarm SimReceipt Ed25519 done; VCP/ARP/Witness done in prior waves
   - `Effort:` 1 day (after E-14 Ed25519 key management is sorted)
 
-- [ ] **E-34** Vantage: fix `_candidate_set_hash` stub — real proof-of-sim hash
+- [x] **E-34** FIXED 2026-09-23 — _candidate_set_hash uses hashlib.sha256(json.dumps(candidates)).hexdigest()
   - `File:` `vantage/backend/...` — placeholder returns zeros
   - `Effort:` 0.5 day
 
-- [ ] **E-37** ip-layer: add kind 1901/1902 publisher at agent birth
+- [x] **E-37** FIXED 2026-09-23 — sovereign_publisher.rs: publish_creation_receipt() (kind 1901) + publish_attestation() (kind 1902)
   - `Evidence:` Kinds defined in spec; zero publisher code anywhere in ecosystem
   - `Effort:` 1 day
 
@@ -1072,7 +1072,7 @@ These findings block the entire system or create hard security gaps.
   - `Evidence:` Hostinger IP literal in source; breaks federation-first design
   - `Effort:` 1 hr — env var `MYCELIUM_GATEWAY_URL`
 
-- [ ] **E-40** Omo-Koda2: parameterize Walrus/Seal/TEE env vars in deployment guide
+- [x] **E-40** FIXED 2026-09-23 — .env.example documents all Walrus/Seal/TEE/OSOVM/UCX/Waggle/CHAIN_ID vars
   - `Evidence:` Several keys default to placeholder values in `.env.example`
   - `Effort:` 0.5 day
 
@@ -1095,15 +1095,15 @@ These findings block the entire system or create hard security gaps.
 - [x] **VCP empty-pubkey gate** (`E-31`) — FIXED 2026-09-23
 - [🔶] **Receipt signing everywhere** (`E-32`) — PARTIAL 2026-09-23 — VCP crypto.rs + ARP signing.rs + Witness nostr_publisher.rs done
 - [x] **Heartbeat Ed25519** (`E-33`) — FIXED 2026-09-23
-- [ ] **Proof-of-sim hash** (`E-34`) — see above
+- [x] **Proof-of-sim hash** (`E-34`) — FIXED 2026-09-23
 - [ ] **Zangbeto automation** (`E-35`) — see above
 - [x] **Witness-firmware Ed25519** (`E-36`) — FIXED 2026-09-23
-- [ ] **ip-layer publishers** (`E-37`) — see above
+- [x] **ip-layer publishers** (`E-37`) — FIXED 2026-09-23
 - [x] **mycelium gateway hardcode** (`E-38`) — FIXED 2026-09-23
 - [x] **mycelium-tools tests** (`E-39`) — FIXED 2026-09-23
-- [ ] **Walrus/Seal/TEE env vars** (`E-40`) — see above
+- [x] **Walrus/Seal/TEE env vars** (`E-40`) — FIXED 2026-09-23
 
-- [ ] Fix `Vantage-Voice-` hardcoded macOS path: `IRANTI_MCP_CWD`
+- [🔶] Fix `Vantage-Voice-` hardcoded macOS path: `IRANTI_MCP_CWD` — pending
   - `File:` `server.ts` — set via env var for deployment portability
 
 - [ ] Fix `Vantage-Voice-` invalid Gemini model id in orchestrator

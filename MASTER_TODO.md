@@ -729,7 +729,7 @@ These are the only remaining items that require your direct action:
 
 | # | What | Command / Action |
 |---|------|-----------------|
-| H1 | **Phase 28.1 — Mycelium fine-tune** | `cd mycelium && GPUAI_API_KEY=gpuai_live_yxOFo45nCboRVOU6ak8lduNJ python train_qlora.py` (~$0.04, ~5 min). Script exists and passes dry-run. |
+| H1 | **Phase 28.1 — Mycelium fine-tune** | `cd mycelium && GPUAI_API_KEY=gpuai_live_REDACTED_ROTATE_2026-09-23 python train_qlora.py` (~$0.04, ~5 min). Script exists and passes dry-run. |
 | H2 | **Phase 7.2 — Sui dNFT redeploy** | `cd Omo-Koda2/omokoda-on-chain && sui client publish` after adding nostr_pubkey + bipon39_words fields to soul.move |
 | H3 | **Phase 9.3 — Stalwart mail infra** | Set up Stalwart on VPS: SPF/DKIM/DMARC, unblock port 25 at Contabo, set AGENT_MAIL_* env vars |
 | H4 | **Phase 12.5 — CasaOS App Store** | Submit PR to IceWhaleTech/CasaOS-AppStore with deploy/ package |
@@ -848,7 +848,7 @@ These 14 findings block the entire system or create hard security gaps.
 
 - [ ] **E-09 / X-11** Remove hardcoded GPU.ai API key from `mycelium/train_qlora.py:64`
   - `Repos:` mycelium
-  - `Evidence:` Line 64: `api_key = "gpuai_live_yxOFo45nCboRVOU6ak8lduNJ"` in source
+  - `Evidence:` Line 64: `api_key = "gpuai_live_REDACTED_ROTATE_2026-09-23"` in source
   - `Effort:` 30 min — move to env var `GPUAI_API_KEY`
 
 - [ ] **E-10 / X-7** Add `zangbeto_anchor` to UCX `ComputeReceipt` before submitting

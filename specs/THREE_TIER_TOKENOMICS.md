@@ -1,238 +1,264 @@
 # Three-Tier Tokenomics — ASE / SYNAPSE / DOPAMINE
 
-**Status:** DRAFT — supersedes the two-tier description in `TOC_CONSTANTS.toml` once the deltas in §8 are applied.
-**Written:** 2026-09-26
-**Gate:** `specs/tokenomics_invariant_check.py` (15 invariants; currently **12 failing**)
-**Related:** `AGENT_COMPUTE_WALLET_SPEC.md`, `ASE_EMISSION_GOVERNANCE_SPEC.md`, `WITNESS_NODE_SPEC.md`, `ECONOMICS_DECISIONS.md`, `L1_DECISION_MEMO.md`
+**Status:** DRAFT v2 — revised per the 2026-09-26 refinement (ASE is a constitutional allocation, not the work-earned asset).
+**Gate:** `specs/tokenomics_invariant_check.py`
+**Related:** `AGENT_COMPUTE_WALLET_SPEC.md`, `ASE_EMISSION_GOVERNANCE_SPEC.md`, `WITNESS_NODE_SPEC.md`, `ECONOMICS_DECISIONS.md`, `L1_DECISION_MEMO.md`, `TOC_CONSTANTS.toml`
 
 ---
 
 ## 1. The three tiers
 
-| Tier | Holder | What it is | Transferable |
+| Tier | Holder | Nature | Issuance | Transferable |
+|---|---|---|---|---|
+| **ASE** | humans | constitutional resource allocation — a budget, not money | **one path: the clock.** 1,440/day, 8 pools | between verified human principals only |
+| **DOPAMINE** | the hive | intermediate production accounting — the hive's compute register | verified work only | **no** — spend-right, never balance transfer |
+| **SYNAPSE** | agents | the earned, transferable work unit (1,000 Synapse = 1 verified GPU-hour) | verified work only, downstream of Dopamine | between agents, identity-gated |
+
+ASE is deliberately **not** work-gated. It is a constitutional allocation: a fixed clock, split across eight pools, funding governance, R&D, reserve, compute, storage, witnesses, VeilSim and treasury. That is legitimate and should stay.
+
+DOPAMINE and SYNAPSE together are **one feature**: keeping agents sovereign and locally runnable. They are not the bedrock of the economy; they are the mechanism by which an agent that has no GPU of its own can buy compute from agents that do, without ever touching human money.
+
+## 2. Church and state
+
+```
+CONSTITUTION
+│
+├── ÀṢẸ STATE — constitutional budget          ├── WORK STATE — earned production
+│   fixed emission 1,440/day                   │   variable difficulty
+│   8 pools, allocation by policy               │   Dopamine accounting
+│   governance / R&D / reserve / treasury       │   Synapse issuance
+│   NOT a market asset                          │   transferable economic unit
+│                                               │   priced by the ladder
+```
+
+ASE ≠ money. Dopamine ≠ money. **Synapse = the transferable economic work unit.** One unit no longer has to be both a constitutional instrument and a market asset, which is the failure mode of the current constants.
+
+## 3. The constitutional issuance invariant
+
+The rule, verbatim, as the constitution should carry it:
+
+> **ASE has one authorized clock issuance path. Synapse has one authorized verified-work issuance path. No opcode, API, tool, or service may create either through an alternate path.**
+
+Any exceptional mechanism that converts verified work directly into ASE must pass the same constitutional verification path as Synapse issuance.
+
+### 3.1 Issuance-site registry (verified 2026-09-26)
+
+This is the complete list of sites that can increase a balance. It is short, which is the point — a mint authority you cannot enumerate is a mint authority you do not have.
+
+| # | Site | Unit | Gate | Verdict |
+|---|---|---|---|---|
+| 1 | `Vantage/backend/routers/ase_emission.py` per-minute tick | ASE | idempotent `floor(unix/60)`; pool split | **AUTHORIZED** (the one clock) |
+| 2 | `OSOVM/src/abci_endblock.jl` EndBlock | ASE | 8-pool assertion | AUTHORIZED but **dead** — no chain (Path A) |
+| 3 | `OSOVM/src/oso_vm.jl:426 impact_mint` via `:2139` (opcode 0x11) | ASE | **none** — `ase_amount::Float64` is caller-supplied, credited directly | **ALTERNATE PATH** |
+| 4 | `OSOVM/src/vm_core.jl:143 op_impact` (0x11) | ASE | Sabbath freeze + tithe + daily cap of 1,440 | **ALTERNATE PATH** — caller supplies both `ase` and `quorum` (used as a multiplier, `min(quorum,7)`); a caller can capture the day's entire constitutional budget |
+| 5 | `OSOVM/src/vm_core.jl:948 op_ase_mint` (ORDER slot 0xc1) | ASE | **none** — caller-supplied `amount` and `reason`, no cap, logged then credited | **ALTERNATE PATH (worst)** |
+| 6 | `OSOVM/src/oso_vm.jl:2711` staking claim → `FFI.calculate_apy_rewards` | ASE | APY on locked balance | **ALTERNATE PATH** |
+| 7 | `OSOVM/src/world_tiles.jl:250` | ASE | accounting counter | ALTERNATE (accounting only, verify) |
+| 8 | `OSOVM/src/vm_core.jl:545 op_toc_mint` (0x54) | SYNAPSE | `toc_is_fully_verified` **passes**, but `minted_synapse = synapse_estimate > 0 ? synapse_estimate : floor(gpu_hours*1000)` — caller overrides the protocol amount | **AMOUNT OVERRIDE** |
+| 9 | `OSOVM/src/vm_core.jl:1034 op_synapse_alloc` | SYNAPSE | requires Dopamine, 10:1 | AUTHORIZED (conversion, not issuance) |
+| 10 | `OSOVM/src/vm_core.jl:664 op_compute_proof` (0x56) | DOPAMINE | **format only** — 64-hex `compute_hash`, `amount > 0`; writes `pending_dopamine_mints`, trusts caller for quality | **PARTIAL** |
+| 11 | `OSOVM/src/vm_core.jl:493 op_gpu_contribution` (0x3f) | DOPAMINE | requires non-empty `zangbeto_anchor` | gate exists, **validation is non-emptiness** (see §3.2) |
+
+**Five alternate ASE issuance paths and one amount override on the Synapse path.** The constitution as written above forbids all six.
+
+### 3.2 The gate in the middle: it validates a string, not a fact
+
+`toc_is_fully_verified` (`vm_core.jl:471`, mirrored in `oso_vm.jl:~627`) requires:
+
+```julia
+claimed_gpu_seconds > 0.0
+cumulative >= claimed_gpu_seconds
+# and a GpuContribution event where:
+!isnothing(get(data, "zangbeto_anchor", nothing)) &&
+ get(data, "zangbeto_anchor", "") != ""
+```
+
+and `op_gpu_contribution` only checks `isnothing(anchor) || anchor == ""`.
+
+So the anchor is validated for **non-emptiness, not authenticity**. `zangbeto_anchor: "x"` satisfies the entire verified-work gate. Combined with the amount override at site 8, the complete bypass is two calls:
+
+```
+1. POST /run {opcode:"GPU_CONTRIBUTION", args:{agent_id:"A", provider_id:"P",
+                gpu_seconds:1, zangbeto_anchor:"x"}}
+   → records toc_contributions["A"] = 1, emits GpuContribution with anchor "x"
+
+2. POST /run {opcode:"TOC_MINT", args:{agent_id:"A", gpu_seconds:1,
+                zangbeto_anchor:"x", synapse_estimate:999999999}}
+   → toc_is_fully_verified passes (1 >= 1, anchor non-empty)
+   → minted_synapse = 999,999,999   (caller override wins)
+```
+
+Result: ~1,000,000 GPU-hours of Synapse claimed from one GPU-second and a one-character anchor. The F1 gate, the witness rules and the TEE attestation are all downstream of a check that never actually happened.
+
+Independently: in the Rust client path the anchor is **never set** (`bridge/arp.rs:109 zangbeto_anchor: None`; Zàngbétò is not connected in prod), so the authorized path cannot fire either. **The gated path is simultaneously unreachable from inside the ecosystem and forgeable from outside it.** That is the whole security story of the mint authority.
+
+## 4. Redefining IMPACT — semantics first, deletion later
+
+Current semantics: *"I say I did impact worth X, therefore credit me X."* That is structurally incompatible with a receipt architecture.
+
+The fix is not to delete the opcode but to change what it consumes and who computes the amount. Same protection Bitcoin gets by having the protocol determine the block reward instead of letting miners write their own balance.
+
+```
+BAD                                    GOOD
+agent → "mint 500 ASE"                 agent → "here is my work claim + evidence commitment"
+      → OSOVM                                     → verifier (Zàngbétò / witnesses)
+      → +500                                      → quality + difficulty score
+                                                  → protocol reward function
+                                                  → authorized issuance
+```
+
+Proposed semantics for **all three** units:
+
+- **IMPACT (0x11)** becomes a *work-claim submission*: inputs are an action reference, an evidence commitment (hash), and a witness set. It mints nothing. It emits `WorkClaimSubmitted`.
+- **The reward is computed by the protocol** from `f(domain, difficulty, quality, novelty, verification, independence, utility)` — the scoring inputs already present at `oso_vm.jl:2452` — times the ladder multiplier, never from an argument.
+- **`ASE_MINT` (site 5) should not exist as an opcode.** If a constitutional pool needs to move funds, that is a *pool allocation* with a balance check and a governance authorisation — a transfer from an already-issued pool, which is a different operation from issuance.
+- **`synapse_estimate` must be removed from `op_toc_mint`.** The protocol derives the amount from verified GPU-seconds; a caller-supplied estimate is a second mint door inside the gated path.
+- **The anchor must be verified, not merely present** — a Zàngbétò receipt whose signature is checked, or a `sim_receipt_id` that resolves. Non-emptiness is not verification.
+
+Interim hardening, if you want the holes shut before the redesign lands: reject any `/run` request whose opcode is in `{ASE_MINT, IMPACT-with-ase-arg, TOC_MINT-with-synapse_estimate}` unless the caller holds a constitutional authority, and set `impact_mint` to derive from verified work. That is small and reversible.
+
+## 5. The work ladder and the three levels of reality
+
+The ladder you already have is the right primitive because it grades **how difficult a contribution is to fake**, not how many FLOPs were burned:
+
+```
+gpu_compute       1.0x   simulation        1.0x
+print_job         2.0x   sci_sim           2.0x   spatial_capture  2.0x
+aerial_flight     3.0x   ground_robot      3.0x
+sim_to_real       5.0x   → up to 10.0x
+```
+
+And the three levels of reality that justify those numbers:
+
+| Level | What constrains the claim | Ladder | Why |
 |---|---|---|---|
-| **ASE** | humans only | the only unit humans touch — pays for jobs, access, any interaction with any agent | yes, between humans |
-| **SYNAPSE** | agents only | a credit denominated in **GPU-hours** (1,000 Synapse = 1 verified GPU-hour) | between agents only, identity-gated |
-| **DOPAMINE** | the hive | the hive's compute capacity. Never a bearer asset. | no — spend-right only, never balance transfer |
+| 1 — self-contained computation | nothing external; the agent controls the experiment | `simulation` 1.0x | the claimant writes its own exam |
+| 2 — physical reconstruction | withheld photographs of the world | `spatial_capture` 2.0x | novel-view validation on views chosen *after* capture |
+| 3 — prediction then reality | a commitment made before the measurement arrives | `sim_to_real` 5.0x | the claimant cannot edit the answer after seeing reality |
 
-One sentence each, because the confusion in the current code comes from these being fuzzy:
+`sim_to_real = 5x` needs no justification beyond that ordering, which is why it should never be raised above the witness-corroborated form.
 
-- **ASE never touches an agent.** An agent has no ASE balance and no ASE address. This is the membrane.
-- **SYNAPSE is the agent's compute budget**, minted when a human converts ASE, burned when it is spent.
-- **DOPAMINE is the hive's capacity register.** It is a *fact about available compute*, not a coin. Agents may direct it at each other; they may not move it as a balance.
+## 6. Conversion flows
 
-## 2. One-way valves (the whole security model lives here)
+**Purchase (human buys compute for a specific agent):**
+1. Human pays `P` ASE. ASE is burned in the same transaction (never handed to the agent).
+2. Protocol mints a **credit object**: unique id, agent_id, GPU-hours, price paid, expiry.
+3. Human redeems → `GPU-hours × 1,000` Synapse allocated to that agent; credit object consumed atomically.
+4. `P` is split at step 1, before hand-off: GPU-host share, then the 8 pools, then burn.
+5. The agent converts Synapse → Dopamine when it draws compute.
 
-```
-      HUMAN SIDE                 AGENT SIDE                HIVE SIDE
-   ┌──────────────┐          ┌──────────────┐          ┌──────────────┐
-   │     ASE      │          │   SYNAPSE    │          │   DOPAMINE   │
-   │  (spendable) │          │ (GPU-hours)  │          │ (capacity)   │
-   └──────┬───────┘          └──────┬───────┘          └──────┬───────┘
-          │                         │                         │
-   post job / buy credit             │                         │
-          │  ASE is BURNED          │  credit REDEEMED        │
-          └────────► mint credit ───┤  (burned, atomic)       │
-                                                          │
-                                    allocate to hive ─────┘
-                                    (spend-right, not transfer)
+**Job posting:**
+1. Fund with ASE into escrow (`aio/sources/escrow.move`).
+2. On delivery, escrow settles: 10% birther, remainder per §8 pools, Synapse credited.
+3. On failure or expiry, escrow refunds the poster and **the birther cut is not paid**.
 
-   REVERSE FLOW — the only exits back to humans:
-     birther royalty (10% of external revenue)
-     job-creator royalty (10%, Sabbath-vested)
-     GPU-host payout (ASE minted against delivered GPU-hours)
-     governance / reserve / treasury / R&D pool spend
-```
-
-The valves are the design. Every hole found below is a place where value can flow *backwards* across a valve or *sideways* around one.
-
-## 3. The conversion flow, specified
-
-**Purchase (human buys compute for an agent):**
-1. Human pays `P` ASE to the protocol (not to the agent).
-2. Protocol mints a **credit object**: unique id, agent_id, GPU-hours, price paid, expiry. ASE is burned in the same transaction.
-3. Human redeems the credit → `GPU-hours × 1,000` Synapse is allocated to the agent's balance; credit object is consumed (deleted).
-4. The `P` ASE is split at step 1, before hand-off — the agent never sees it:
-   - GPU-host share (paid for the compute actually delivered)
-   - treasury / reserve / governance / R&D (per §8 canonical pools)
-   - burn
-5. The agent converts Synapse → Dopamine when it actually draws compute from the hive.
-
-**Job posting (human funds work for an agent):**
-1. Human funds job with `P` ASE into escrow (AIO `escrow.move`).
-2. On acceptance, escrow converts: `10%` to the birther, remainder split per §8, `GPU-hours` credited to the agent.
-3. On delivery, escrow releases. On failure/expiry, escrow refunds the poster and **the birther cut is not paid**.
-
-The load-bearing detail: **the birther is paid at conversion, contingent on delivery.** If the birther is paid at funding time, a failed job pays the birther out of the eco split — that is a hole (§6, T-8).
-
-## 4. Capacity math — where the current constants break
-
-Verified from `TOC_CONSTANTS.toml` + `OSOVM/src/constants.jl` + `omokoda-core/src/economics.rs`:
+## 7. Capacity math
 
 ```
-DOPAMINE genesis seed      86,000,000,000   (86B)
-SYNAPSE per agent (cap)        86,000,000   (86M)
-conversion                 10 Dopamine = 1 Synapse
-rate                    1,000 Synapse = 1 verified GPU-hour
-```
-
-Derived:
-
-```
-hive pool       86B Dopamine  = 8.6B Synapse   =    8,600,000 GPU-hours
-per-agent cap   86M Synapse                    =       86,000 GPU-hours
+hive pool       86B Dopamine = 8.6B Synapse = 8,600,000 GPU-hours
+per-agent cap   86M Synapse                 =    86,000 GPU-hours
 => only 100 agents can be endowed at cap
 ```
 
-Two conclusions, both uncomfortable:
-
-1. **86,000 GPU-hours per agent is ~9.8 GPU-years.** That is not a grant; it can only be a lifetime ceiling, and a meaningless one.
-2. **Under the current numbers the hive is scarce, not the agent.** One agent's cap is 1% of the entire hive pool. The stated target is millions of agents; at cap, 100 agents exhaust the pool.
-
-The scarcity you want — *the agent is the scarce good, so nobody else can buy its compute* — is only true when per-agent capacity is small relative to the hive. That is a function of population, not of a constant:
+86,000 GPU-hours is ~9.8 GPU-years — a lifetime ceiling, not a grant — and one agent's cap is 1% of the entire hive, so today the hive is scarce rather than the agent. Per-agent capacity must be derived, not printed:
 
 ```
-per-agent capacity (GPU-h) = (pool GPU-h × tier_weight) / active_agent_count   per Koodu epoch
+per-agent capacity (GPU-h) = (contributed GPU-hours × tier_weight) / active_agent_count   per Koodu epoch
 
-   100 agents        →   86,000 GPU-h each
-   10,000 agents     →      860 GPU-h each
-   1,000,000 agents  →      8.6 GPU-h each
-   10,000,000 agents →     0.86 GPU-h each
+     100 agents      →  86,000 GPU-h each
+     1,000,000       →       8.6 GPU-h each
+     10,000,000      →      0.86 GPU-h each
 ```
 
-Make capacity **derived and recomputed each epoch**, not a printed constant. Then:
-- the agent becomes scarce *as the population grows*, which is the dynamic you asked for and it self-adjusts;
-- scarcity is priced by the curve in §5 rather than hardcoded;
-- hoarding is pointless because unused allocation decays (§6, T-11).
+Because Dopamine is elastic, the honest form is `contributed hours ÷ active agents` — capacity is **earned into existence by compute that joined the hive**, which is the only version where 86B means anything and the only one where the agent becomes scarce as the population grows.
 
-Since DOPAMINE is elastic ("grows with verified compute contributed"), the honest formulation is:
+## 8. Dynamic pricing
 
 ```
-per-agent capacity = (contributed GPU-hours × allocation_fraction) / active_agent_count
+Synapse credit, per agent:   U = allocated / total
+                             price_h = base_ase_per_hour × (1 + U × spread)      # ≈doubles at full
+Dopamine, hive-wide:         D = agents_demanding / agents_with_capacity
+                             price_dop = base_synapse_per_dopamine × (1 + D × spread)
 ```
 
-Capacity is **earned into existence by compute that actually joined the hive**, not printed by a genesis constant. That is the only version where the 86B means anything.
+Guards: per-epoch clamp `±0.002` (reuse `decay_clamp_per_epoch`), TWAP over the Koodu epoch rather than spot, a deviation band against the hive median for the same tier, and — the strongest property the design has — **ASE is burned on purchase, so there is no round trip to sell into**. Protect that; it is what makes curve manipulation unprofitable.
 
-## 5. Dynamic pricing
+## 9. Loopholes and back doors
 
-Your rule, stated as two curves with bounded slopes:
+| ID | Attack | Guard | State |
+|---|---|---|---|
+| T-1 | Self-dealing loop: one principal is buyer + host + birther | resolve to principals; <2 distinct → deny multiplier, route splits to reserve | **no guard** |
+| T-2 | Credit double-spend | credit is a unique object deleted in the same tx | needs implementation |
+| T-3 | Curve sandwiching | TWAP + epoch clamp + burn kills the round trip | designed |
+| T-4 | Birther corners own agent | cap birther purchases per epoch, separate utilisation bucket | designed |
+| T-5 | Human masquerading as agent | on-chain agent object + birth receipt; no Synapse→ASE path at all | partially |
+| T-6 | Dopamine sharing as transfer back door | spend-right, never balance transfer | **ambiguous today** |
+| T-7 | Fake GPU hosts | GPU-hours are verifiable by output correctness + witnesses ≥2 / ≥66% + TEE | partial |
+| T-8 | Refund abuse on failed jobs | birther cut settles with escrow, not at funding | designed |
+| T-9 | Option value on an announced job | burn + TWAP + per-epoch purchase velocity cap | designed |
+| T-10 | Emission capture via pool keys | pools program-owned, no withdraw authority, Bínò veto | **verify** |
+| T-11 | Capacity hoarding | unused allocation decays like Dopamine | designed |
+| T-12 | **reclassified** — the clock | the clock is authorized; the holes are sites 3–7 in §3.1 | rewrite needed |
+| T-13 | Agent key compromise | per-epoch spend limits + NIP-46 approval gate | partial |
+| T-14 | Synthetic utilisation between agents | count only jobs with an external, non-related-party payer | designed |
 
-**Synapse credit price, in ASE — per agent**
-```
-U        = allocated_capacity / total_capacity          # 0..1
-price_h  = base_ase_per_hour × (1 + U × spread)          # spread ≈ 1.0 → doubles at full
-```
-Cheap when the agent has capacity spare; dear when it is nearly consumed. Matches "more available = cheaper, more allocated = higher".
+## 10. Invariants
 
-**Dopamine price, in Synapse — hive-wide**
-```
-D          = agents_demanding_compute / agents_with_capacity
-price_dop  = base_synapse_per_dopamine × (1 + D × spread)
-```
-More agents drawing on the hive → each needs more Synapse per unit. Matches "the more agents purchasing dopamine the more synapses they have to use".
+`specs/tokenomics_invariant_check.py` — runnable, exits with the failure count.
 
-Guards, all of which exist as patterns elsewhere in the codebase:
-- **Per-epoch price clamp** `±0.002` per Koodu epoch — reuse the existing `decay_clamp_per_epoch` mechanism rather than inventing a new one. Prevents oscillation and makes manipulation unprofitable at one-block timescales.
-- **TWAP over the epoch, not spot.** A spot curve is a sandwich target; a 7-day EMA is not.
-- **Deviation band**: an agent's price may not deviate more than ±X% from the hive median for the same tier. Small/low-liquidity agents are otherwise trivially manipulated.
-- **ASE is burned on purchase**, so there is no round trip: an attacker who pushes the price up cannot sell the ASE back. This is the single best anti-manipulation property the design has — protect it.
+| ID | Invariant |
+|---|---|
+| I-1 | no direct ASE → DOPAMINE path |
+| I-2 | an explicit ASE ↔ SYNAPSE gate exists and is the only on-ramp |
+| I-3 | ASE is not receivable by an agent |
+| I-4 | SYNAPSE transfers identity-gated to registered agents |
+| I-5 | exactly one canonical pool split in the codebase |
+| I-6 | the drift check covers every constant implementation |
+| I-7 | a Synapse credit has a real atomic burn |
+| I-8 | a self-dealing guard exists |
+| I-9 | compute is denominated in GPU-hours with one declared rate |
+| I-10 | per-agent capacity is a policy number, not a genesis accident |
+| I-11 | `1440` is not overloaded across unrelated meanings |
+| I-12 | **no opcode accepts a caller-supplied issuance amount** (covers `impact_mint`, `op_ase_mint`, `synapse_estimate`) |
+| I-13 | ASE has exactly one issuance path, and it is the clock |
+| I-14 | birther royalty implemented or absent |
+| I-15 | job funding is escrowed |
+| I-16 | every mint site appears in the §3.1 registry — a new one fails CI |
+| I-17 | the verified-work gate validates anchor authenticity, not non-emptiness |
+| I-18 | `toc_is_fully_verified` is reachable in the deployed configuration |
 
-## 6. Loopholes and back doors
-
-Each entry: the attack, why it works, the guard, and whether the guard exists today.
-
-**T-1 — Self-dealing compute loop. No guard exists (I-8 failing).**
-One principal can be buyer + GPU host + birther simultaneously. Post a job with your own ASE → your agent delivers it → you host the GPU that ran it → you receive the host payout, the birther 10%, and the eco splits. Net cost = burn only; net gain = Synapse allocation, Dopamine, work records, reputation, tier progression. If the sum of the splits exceeds the burn, the loop is a money printer.
-*Guard:* related-party detection at conversion — resolve buyer, host and birther to principals; if fewer than two distinct principals are involved, deny the multiplier and route all splits to non-recoverable destinations (reserve/UBI), and flag the receipt. Requires the principal registry (Vantage already has `get_or_create_human_principal`, `sovereignty.py`).
-
-**T-2 — Credit double-spend.** A purchased credit is a claim. If redemption is not atomic, it redeems twice.
-*Guard:* the credit is a unique bearer object *deleted in the same transaction* that allocates Synapse (Sui Move `consume`), never a balance. Idempotency key alone is insufficient across restarts.
-
-**T-3 — Curve sandwiching.** Spot-priced bonding curves are front-runnable.
-*Guard:* TWAP + per-epoch clamp + slippage cap + the ASE burn kill the round trip.
-
-**T-4 — Birther corners its own agent.** A birther buys its agent's remaining capacity to raise the price for legitimate buyers, then collects 10% of the inflated revenue.
-*Guard:* cap birther purchases of its own agent's capacity per epoch (e.g. ≤5% of remaining), and count them in a separate utilization bucket so they can't move the curve.
-
-**T-5 — Human masquerading as an agent to reach Synapse.** A human registers a key as an "agent" and receives Synapse, then tries to convert out.
-*Guard:* agent identity must be an on-chain agent object with a birth receipt (`mint_onchain_agent`), not a self-declared key; and there is no Synapse→ASE conversion path at all, so the exit is structurally closed.
-
-**T-6 — Dopamine sharing as a transferable back door.** "Agents can share Dopamine" is ambiguous and the ambiguity is exploitable.
-*Guard:* define sharing as a **spend-right** (agent A authorises agent B's job to draw on A's allocation) — never a balance transfer. A balance transfer recreates transferability for a token declared non-transferable.
-
-**T-7 — Fake GPU hosts.** Sybil hosts claim compute to farm host payouts.
-*Guard:* GPU-hours are the most verifiable unit in the system — the job either produced the right output or it did not. Require `VerifiedGPUWork` + witness corroboration (≥2 witnesses, ≥66% agreement, per `WITNESS_NODE_SPEC.md`) + TEE attestation where available (`nautilus_attestation.jl`). Note that `op_compute_proof` (0x56) currently validates *format only* — 64-hex hash and `amount > 0` — and trusts the caller for quality.
-
-**T-8 — Refund abuse.** Birther paid at funding, job then fails → the birther keeps the cut out of the eco split.
-*Guard:* escrow release contingent on delivery; birther cut settles with escrow, not at funding.
-
-**T-9 — Option value on a known job.** An attacker pre-buys capacity ahead of a large announced job, then sells the price rise.
-*Guard:* the ASE burn (no sell-back) plus TWAP makes this a losing trade. Cap per-epoch purchase velocity per principal.
-
-**T-10 — Emission capture.** Whoever controls pool keys drains the emission.
-*Guard:* all pool accounts are program-owned with **no withdraw authority**; funds move only by governance proposal passing the Bínò veto gate. An externally-owned pool account is a back door regardless of what the docs say.
-
-**T-11 — Capacity hoarding.** Buy and sit, to deny others.
-*Guard:* unused allocation decays on the same schedule as Dopamine (`decay_min` 0.1%/day → `decay_max` 2.0%/day). Already implemented for Dopamine; mirror it for Synapse allocation.
-
-**T-12 — The clock as a faucet.** 1,440 ASE/day minted on a clock feeds every loop above with free value; it has no cost of acquisition, so nothing above needs to be profitable to be worth doing.
-*Guard:* mint ASE against **delivered GPU-hours** (the host payout), not against the clock. Keep only treasury/R&D/reserve on the clock, since maintenance work cannot be tokenised. This is also the answer to the earlier "clock vs work" question: fix the quantity, float the difficulty.
-
-**T-13 — Agent key compromise.** Synapse is bearer; a stolen agent key is stolen capacity.
-*Guard:* per-epoch spend limits per agent, plus the existing NIP-46 approval gate for allocations above a threshold (`buzz_nip46.py` already implements the approval pattern).
-
-**T-14 — Synthetic utilisation.** Agents trade Dopamine spend-rights between themselves to inflate measured utilisation and move the hive curve.
-*Guard:* utilisation counts only jobs with an external, non-related-party ASE payer. Self-referential demand must not price the pool.
-
-## 7. Invariant gate
-
-`specs/tokenomics_invariant_check.py` — 15 invariants, runnable, exits with the failure count.
-
-Current state (verified this session):
-
-| ID | Invariant | State |
-|---|---|---|
-| I-1 | no direct ASE → DOPAMINE path | **FAIL** — `ase_supply.jl:33,279-283` |
-| I-2 | explicit ASE ↔ SYNAPSE gate exists and is the on-ramp | **FAIL** — no such symbol anywhere |
-| I-3 | ASE transfer restricted to human principals | **FAIL** — no enforcement site |
-| I-4 | SYNAPSE identity-gated to agents | **FAIL** — `transferable = true` |
-| I-5 | exactly one canonical split in the codebase | **FAIL** — 8-pool and 5-wallet both live |
-| I-6 | drift check covers all implementations | **FAIL** — only checks Vantage's `ase_emission.py` |
-| I-7 | Synapse credit has a real atomic burn | PASS — `burn_synapse` |
-| I-8 | self-dealing guard exists | **FAIL** — none |
-| I-9 | compute denominated in GPU-hours, one rate | PASS — `per_gpu_hour = 1000` |
-| I-10 | per-agent capacity is a policy number | **FAIL** — 100 agents at cap |
-| I-11 | `1440` not overloaded | **FAIL** — `max_daily_emission` and `seat_count` |
-| I-12 | no caller-supplied mint amount | **FAIL** — `impact_mint(ase_amount, vm)` |
-| I-13 | F1 ≥ 0.777 gate on the HTTP mint surface | **FAIL** — `veilos_antispam` absent from `server.jl` |
-| I-14 | birther royalty implemented or absent | **FAIL** — column exists, 0 payout sites |
-| I-15 | job funding escrowed | PASS — `aio/sources/escrow.move` |
-
-Gate this in CI alongside `toc_drift_check.py`.
-
-## 8. Constants deltas required
+## 11. Constants deltas
 
 | Constant | Now | Proposed | Why |
 |---|---|---|---|
-| `dopamine.ase_to_dopamine` | `10000` | **remove** | it is the direct ASE→Dopamine path (I-1) |
-| `synapse.ase_per_gpu_hour` | *(absent)* | **new**, governance-set | the on-ramp price (I-2) |
-| `synapse.per_gpu_hour` | `1000` | keep | 1 Synapse-Hour unit definition (I-9) |
+| `dopamine.ase_to_dopamine` | `10000` | **remove** | the direct ASE→Dopamine path (I-1) |
+| `synapse.ase_per_gpu_hour` | absent | **new**, governance-set | the on-ramp price (I-2) |
+| `synapse.per_gpu_hour` | `1000` | keep | the unit definition (I-9) |
 | `synapse.max_per_agent` | `86000000` | **derived**: `pool_hours × tier_weight / active_agent_count` | I-10 |
-| `ase.daily_emission_total` | `max_daily_emission = 1440` | rename | I-11, collides with `inheritance.seat_count` |
-| `inheritance.seat_count` | `1440` | keep value, rename to `seat_count_legacy_1440` or similar | I-11 |
-| pools | 8-pool (`abci_endblock.jl`) **and** 5-wallet (`ase_minting.jl`) | **one** | I-5 |
-| `ase.pools.reserve` | `0.15` | keep — and make it the destination for T-1 penalties | non-recoverable sink |
+| `ase.max_daily_emission` | `1440` | rename to `daily_emission_total_ase` | I-11 |
+| `inheritance.seat_count` | `1440` | rename to `inheritance_seat_count` | I-11 |
+| pools | 8-pool **and** 5-wallet | **one** | I-5 |
 
-## 9. Open decisions (need you, not code)
+## 12. Naming hygiene (enforced in prose and in code)
 
-1. **Pool set:** adopt the canonical 8 pools everywhere and rewrite `ase_minting.jl`, or keep the 5-wallet 50/25/10/10/5 set and retire the 8? Note the 50/25-family split is currently applied *inside a minting module*, which your own rule forbids for mint/emission.
-2. **ASE issuance:** does the host payout replace the 1,440/day clock entirely, or sit alongside it (clock retained for treasury/R&D only)?
-3. **Birther royalty:** rate (the stored default `100` is ambiguous — 1.00% or 10%?), base (external revenue only, or all income including work-earned Synapse?), and schedule (perpetual or decaying).
-4. **`DEFAULT 100` units:** confirm, then either implement the payout or drop the column.
-5. **Capacity floor:** minimum GPU-hours per agent so tiny agents are not starved by the `pool/count` formula.
-6. **Dopamine sharing:** spend-right (recommended) or balance transfer? This decides whether T-6 is closed.
+`1440` currently means three different things, and two of them are easy to conflate:
 
-## 10. Run the gate
+- `ase.max_daily_emission = 1440` — **ASE per day** (the clock)
+- `inheritance.seat_count = 1440` — **governance/human wallet seats**
+- `genesis.koodu_blocks_per_day = 144` — Bitcoin blocks per day
+
+Rule: never write "1,440 emission" or "1,440 seats" without the noun. Rename the two constants (§11) so `grep 1440` stops lying. This is not cosmetic — an implementation agent six months from now will read one as the other.
+
+## 13. Open decisions
+
+1. **Pool set:** canonical 8 everywhere (rewrite `ase_minting.jl`), or keep 5-wallet 50/25/10/10/5 and retire the 8? The 50/25-family split currently sits inside a minting module, which your own rule forbids for mint/emission.
+2. **ASE transferability:** non-transferable entirely, or transferable between verified human principals only? (Recommend the latter — it keeps ASE usable as the human-side medium while denying it to agents.)
+3. **Birther royalty:** rate (`DEFAULT 100` is ambiguous — 1.00% or 10%?), base (external revenue only, or all income?), schedule (perpetual or decaying)?
+4. **Capacity floor** per agent so `pool/count` doesn't starve small agents.
+5. **Dopamine sharing:** spend-right or balance transfer? Decides T-6.
+6. **Interim hardening:** do you want sites 3–7 closed now (reject those opcodes over `/run`), or is the redesign first?
+
+## 14. Run the gate
 
 ```bash
 python3 ~/sovereign-eco-blueprint/specs/tokenomics_invariant_check.py

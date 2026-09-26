@@ -216,27 +216,79 @@ check(
     "rename: daily emission total vs inheritance seat count must not share a literal",
 )
 
-# ── I-12 Mint has exactly one door ─────────────────────────────────────────
-impact = grep(r"function impact_mint", OSOVM / "src")
-guard = grep(r"impact_mint\(ase_amount", OSOVM / "src")
+# ── I-12  No opcode may accept a caller-supplied issuance amount ───────────
+CALLER_AMOUNT = r"function impact_mint|op_ase_mint|synapse_estimate"
+hits = grep(CALLER_AMOUNT, OSOVM / "src")
 check(
     "I-12",
-    "The IMPACT mint path is gated (no caller-supplied mint amount)",
-    len(impact) == 0,
-    "\n".join(impact + guard),
-    "impact_mint must derive the amount from verified work, not from args[:ase]",
+    "No opcode accepts a caller-supplied issuance AMOUNT (protocol computes the reward)",
+    len(hits) == 0,
+    "\n".join(hits[:5]),
+    "impact_mint / ASE_MINT must not exist; drop synapse_estimate from op_toc_mint",
 )
 
-# ── I-13 The quality gate is on the request path ───────────────────────────
-server = (OSOVM / "src" / "server.jl").read_text() if (OSOVM / "src" / "server.jl").exists() else ""
-antispam_wired = "veilos_antispam" in server or "F1_THRESHOLD" in server
-fabricated = bool(re.search(r"f1_score\s*=\s*ase_minted > 0\.0 \? 0\.92", server))
+# ── I-13  ASE has exactly ONE issuance path, and it is the clock ───────────
+# Registry from THREE_TIER_TOKENOMICS.md 3.1: site -> authorized?
+ISSUANCE_SITES = {
+    ("ase_emission.py", "ase_emission"): True,        # the one clock
+    ("abci_endblock.jl", "POOL_WEIGHTS"): True,       # clock (L1, currently dead)
+    ("oso_vm.jl", "impact_mint"): False,
+    ("vm_core.jl", "op_impact"): False,
+    ("vm_core.jl", "op_ase_mint"): False,
+    ("oso_vm.jl", "accrued_rewards"): False,
+    ("world_tiles.jl", "total_ase_minted"): False,
+}
+found = {}
+for sym in [s for (_, s) in ISSUANCE_SITES]:
+    for h in grep(sym, OSOVM / "src", VANTAGE / "backend"):
+        base = h.split("/")[-1].split(":")[0]
+        if (base, sym) in ISSUANCE_SITES:
+            found[(base, sym)] = True
+unknown = [k for k in found if k not in ISSUANCE_SITES]
+rogue = [k for k, _ in found.items() if not ISSUANCE_SITES.get(k, True)] if not unknown else list(found)
 check(
     "I-13",
-    "The F1 >= 0.777 gate is reachable from the HTTP mint surface, and no f1 is fabricated",
-    antispam_wired and not fabricated,
-    f"veilos_antispam referenced in server.jl: {antispam_wired}; fabricated f1 present: {fabricated}",
-    "wire veilos_antispam.check_mint into the mint path; delete the 0.92/0.88 heuristic",
+    "ASE has exactly one authorized issuance path (the clock); no alternate route",
+    not rogue and not unknown,
+    "unauthorized issuance sites present:\n" + "\n".join(f"{f}:{s}" for f, s in sorted(rogue)),
+    "route all issuance through the clock; remove IMPACT/ASE_MINT/staking-reward mints",
+)
+
+# ── I-16  Every mint site is in the registry (new ones fail CI) ────────────
+MINTISH = r"impact_mint\(|op_ase_mint\(|minted_synapse\s*=|ase_minted\s*=>\s*[0-9]"
+hits = grep(MINTISH, OSOVM / "src", glob="*.jl")
+undeclared = [h for h in hits if not any(s in h for _, s in ISSUANCE_SITES)]
+check(
+    "I-16",
+    "Every mint site appears in the 3.1 registry (undeclared site => CI fail)",
+    len(undeclared) == 0,
+    "\n".join(undeclared[:5]) if undeclared else f"all {len(hits)} mint sites declared",
+    "add the new site to ISSUANCE_SITES in this file AND to the spec registry, with justification",
+)
+
+# ── I-17  The verified-work gate validates AUTHENTICITY, not non-emptiness ─
+auth = grep(r"verify_zangbeto_receipt|verify_anchor_signature|anchor_signature_valid|anchor_verified",
+            OSOVM / "src", KODA2 / "omokoda-core" / "src")
+soft = grep(r'as \"\"|!= \"\"', OSOVM / "src", glob="*.jl")
+check(
+    "I-17",
+    "Verified-work gate checks anchor authenticity, not merely non-emptiness",
+    len(auth) > 0,
+    f"authenticity checks: {len(auth)} | non-emptiness checks: {len(soft)}\n"
+    + "\n".join(soft[:3]),
+    "zangbeto_anchor must be a signed receipt whose signature is verified, not a non-empty string",
+)
+
+# ── I-18  The gated path is reachable in the deployed configuration ────────
+none_sites = grep(r"zangbeto_anchor:\s*None", KODA2 / "omokoda-core" / "src", VANTAGE / "backend", glob="*.rs")
+some_sites = grep(r"zangbeto_anchor:\s*Some", KODA2 / "omokoda-core" / "src", VANTAGE / "backend", glob="*.rs")
+check(
+    "I-18",
+    "The authorized (gated) issuance path is reachable in the deployed config",
+    len(some_sites) > 0,
+    f"callers passing a real anchor: {len(some_sites)} | callers passing None: {len(none_sites)}\n"
+    + "\n".join(none_sites[:3]),
+    "set a real Zangbeto anchor on the compute path, or the gate can never fire from inside",
 )
 
 # ── I-14 Birther royalty: implemented, or the column must not exist ────────

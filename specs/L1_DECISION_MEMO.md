@@ -1,6 +1,11 @@
 # L1 Consensus Decision Memo
-**Status: OPEN — decision required before Phases 15.4, 20.1, 23, 24, 25 begin**
+**Status: DECIDED — Path A (Sui AIO) chosen. Updated 2026-09-26.**
 **Written: 2026-09-16. Gatekeepers: Phases 15.4, 20.1, 23.x, 24.x, 25.3–25.8, 26.3–26.7, 27.x**
+
+> **Decision recorded in MASTER_TODO.md (2026-09-23):** Phases 15.4, 23.4, 24.3 all marked
+> "N/A: Path A (Sui) chosen; Path C (Cosmos) not selected." Trigger for revisiting: a concrete
+> censorship/OFAC event against ecosystem wallets — not revenue, not preference. See §Trigger
+> below. The sovereign L1 design remains in OSOVM_L1_SPEC.md as the contingency path.
 
 ---
 

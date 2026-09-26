@@ -1,6 +1,6 @@
 # Ọ̀ṢỌ́ Intermediate Representation (OSO-IR) Specification
-# Version 1.0 — Phase 21.1 / 21.3
-# Locked: 2026-09-15
+# Version 1.0 — Phase 21 LOCKED
+# Locked: 2026-09-24
 
 ---
 
@@ -8,17 +8,37 @@
 
 The OSO-IR is the JSON-serialisable intermediate representation that bridges:
 
-- **Source**: Ọ̀ṢỌ́ language (what the developer writes — declarative, agent-native)
-- **Target**: Move / WASM / Native contract backends (what actually executes)
+- **Source**: Ọ̀ṢỌ́ language (declarative, agent-native)
+- **Target**: Move / WASM / Native contract backends
 
 The compiler pipeline is:
 
 ```
-Ọ̀ṢỌ́ source
-   → OSO-IR (this document) ← validation gate
-      → Move codegen (Sui testnet / OSOVM L1)
-      → WASM codegen (browser / edge)
-      → Native codegen (Rust — kernel-local execution)
+Ọ̀ṢỌ́ source (.oso)
+   → Ọ̀ṢỌ́-IR (this spec) ← validator gate (oso-ir crate)
+      → Move codegen   (Sui / OSOVM L1)
+      → WASM codegen   (CosmWasm model)
+      → Native codegen (Rust ABCI handler)
+```
+
+Distinct from the OSOVM opcode IR in `oso-parser` (which is VM-execution level).
+This IR operates at *contract semantics* level: what the contract IS, not how
+opcodes execute step by step.
+
+---
+
+## RUST CRATE
+
+`oso-ir` — part of the Omo-Koda2 workspace.
+
+Public API surface:
+```rust
+pub use types::{
+    OsoIr, ContractClass, AssetDef, CapabilityRef, ActionDef,
+    EvidencePolicy, SettlementPolicy, WitnessPolicy, PolicyExpr,
+    BackendTarget, IrError,
+};
+pub use validator::{validate, ValidationResult, ValidationError};
 ```
 
 ---
@@ -29,291 +49,205 @@ The compiler pipeline is:
 |---|---|
 | **Declarative** | IR describes *what*, not *how*. Backend chooses execution strategy. |
 | **Backend-agnostic** | Same IR document compiles to Move, WASM, or Native unchanged. |
-| **Security-explicit** | Capabilities are declared, not assumed. Missing capability = compile error. |
-| **Evidence-native** | Proof requirements are first-class IR fields, not afterthoughts. |
-| **Lifecycle-complete** | Every contract state machine is declared in the IR (no implicit transitions). |
-| **Sovereign-economics** | Fee routing, ASE burn, Èṣù tithe, and pool distribution declared per contract. |
+| **Security-explicit** | Capabilities are declared with tier requirements. |
+| **Evidence-native** | Proof requirements are first-class IR fields. |
+| **Sovereign-economics** | Fee routing and treasury tithe declared per contract. |
+| **Content-addressed** | Every IR document has a BLAKE3 content hash. |
 
 ---
 
-## TOP-LEVEL SCHEMA
+## TOP-LEVEL SCHEMA (`OsoIr`)
 
 ```json
 {
-  "oso_ir_version": "1.0",
+  "ir_version":      "1.0",
   "contract_class":  "<ContractClass>",
-  "contract_name":   "<string>",
-  "assets":          [ <AssetSpec>, ... ],
-  "capabilities":    [ "<string>", ... ],
-  "minimum_tier":    <u8>,
-  "evidence":        <EvidenceSpec>,
-  "witness_policy":  <WitnessPolicySpec>,
-  "settlement":      <SettlementSpec>,
-  "policy":          <PolicySpec>,
-  "lifecycle":       [ "<StateLabel>", ... ]
+  "name":            "<string>",
+  "version":         "0.1.0",
+  "assets":          [ <AssetDef>, ... ],
+  "capabilities":    [ <CapabilityRef>, ... ],
+  "actions":         [ <ActionDef>, ... ],
+  "evidence":        <EvidencePolicy | null>,
+  "settlement":      <SettlementPolicy | null>,
+  "policy":          <WitnessPolicy | null>,
+  "backend_targets": [ "<BackendTarget>", ... ],
+  "metadata":        { "<key>": <value>, ... }
 }
 ```
 
-### `oso_ir_version` (string, required)
-
-Current value: `"1.0"`. Validators must reject unknown versions.
+### `ir_version` (string, default `"1.0"`)
+Current value: `"1.0"`.
 
 ### `contract_class` (enum, required)
+One of: `"financial"` | `"agent"` | `"work"` | `"device"` | `"evidence"` | `"governance"`.
 
-One of: `"financial"`, `"agent"`, `"work"`, `"device"`, `"evidence"`, `"governance"`.
+### `name` (string, required)
+Human-readable contract name. Must not be empty or whitespace-only.
 
-Each class has class-specific validation rules (see section below).
+### `version` (string, default `""`)
+SemVer contract version string.
 
-### `contract_name` (string, required)
-
-PascalCase identifier. Must match `[A-Z][A-Za-z0-9]{2,63}`.
-
-### `assets` (array, required, non-empty)
-
-Each `AssetSpec`:
+### `assets` (array of `AssetDef`, default `[]`)
 ```json
 {
-  "name":   "<string>",
-  "fields": ["<field_name>", ...]
+  "name":        "<PascalCase>",
+  "fields":      [ { "name": "<snake_case>", "field_type": "<string>", "required": true } ],
+  "transferable": true,
+  "divisible":   false
 }
 ```
-Field names must be snake_case. At least one asset is required.
+Asset names must be unique within a contract.
 
-### `capabilities` (array, required for `work` contracts)
-
-Declares the capability tokens the contract consumes or grants.
-Standard capabilities: `GPU_COMPUTE`, `DEVICE_INHABIT`, `AGENT_SPAWN`,
-`PROPOSAL_CREATE`, `MEMORY_WRITE`, `EVIDENCE_SUBMIT`.
-
-Work contracts MUST declare at least one capability.
-
-### `minimum_tier` (u8, default 0)
-
-Minimum agent tier required to interact with this contract (0–5).
-
-### `evidence` (object, required)
-
+### `capabilities` (array of `CapabilityRef`, default `[]`)
 ```json
 {
-  "required":  true,
-  "type":      "<EvidenceKind>",
-  "fields":    ["<field>", ...]
+  "name":          "GPU_COMPUTE",
+  "minimum_tier":  2,
+  "required":      true
 }
 ```
+`minimum_tier` range: 0–5. Values > 5 are validation errors.
 
-`EvidenceKind` values: `ComputeReceipt`, `DeviceAttestation`, `ZangbetoReceipt`,
-`WitnessBundle`, `AgentLifecycle`, `WorkCompletion`, `GovernanceVote`.
+Standard capability names: `GPU_COMPUTE`, `DEVICE_INHABIT`, `AGENT_SPAWN`,
+`PROPOSAL_CREATE`, `MEMORY_WRITE`, `EVIDENCE_SUBMIT`, `SIGN_TX`,
+`STORAGE_WRITE`, `STORAGE_READ`.
 
-When `required: false`, `type` and `fields` may be omitted.
-
-### `witness_policy` (object, optional)
-
+### `actions` (array of `ActionDef`, default `[]`)
 ```json
 {
-  "quorum": <u8>,
-  "types":  ["peer" | "device" | "agent" | "node"]
+  "name":          "submit_job",
+  "requires":      [ <PolicyExpr>, ... ],
+  "emits":         [ "JobSubmitted" ],
+  "mutates_state": true,
+  "vessel":        "Act"
 }
 ```
+- `requires`: preconditions — array of `PolicyExpr` (see below)
+- `emits`: event/receipt type names emitted on success
+- `vessel`: If-Script vessel this action maps to (optional; non-canonical values produce a warning)
 
-`quorum` = minimum number of witness signatures before settlement proceeds.
-Omit for contracts that do not require external witnessing.
+Canonical If-Script vessels:
+`Act`, `Oracle`, `Create`, `Destroy`, `Transfer`, `Observe`,
+`Communicate`, `Compute`, `Store`, `Retrieve`, `Execute`, `Validate`,
+`Govern`, `Prove`, `Attest`, `Sign`.
 
-### `settlement` (object, required)
-
+### `evidence` (`EvidencePolicy | null`, default `null`)
 ```json
 {
-  "currency":       "ASE" | "SUI" | "USDC",
-  "fee_routing":    "6-pool" | "direct" | "dao-pool",
-  "creator_share":  <f64>,
-  "burn_share":     <f64>,
-  "provider_share": <f64>
+  "required":       true,
+  "evidence_type":  "ComputeReceipt",
+  "minimum_count":  1
+}
+```
+When `required: true`, `evidence_type` must be non-empty (validation error otherwise).
+`minimum_count` must be ≥ 1.
+
+### `settlement` (`SettlementPolicy | null`, default `null`)
+```json
+{
+  "currency":     "ASE",
+  "fee_routing":  "6-pool",
+  "treasury_pct": 3.69
+}
+```
+Known currencies: `ASE`, `DOPAMINE`, `SYNAPSE`, `SUI`, `USDC`.
+Unknown currencies produce a warning (not an error — extensible).
+`treasury_pct` must be in `[0, 100]`.
+
+### `policy` (`WitnessPolicy | null`, default `null`)
+```json
+{
+  "witness_quorum":    2,
+  "quality_threshold": 90,
+  "upgradeable":       false,
+  "requires_council":  false
 }
 ```
 
-All shares are fractions (0.0–1.0). Validation rule: shares must sum ≤ 1.0.
-Remainder flows to the ecosystem pool unless `fee_routing: "direct"`.
+### `backend_targets` (array of `BackendTarget`, default `[]`)
+Values: `"move"` | `"wasm"` | `"native"`.
 
-The `"6-pool"` routing follows the 8-pool ASE emission distribution, specifically
-the 6 pools that contract fees flow to (excludes genesis pool and validator pool).
+### `metadata` (object, default `{}`)
+Arbitrary JSON values. Common keys: `author`, `license`, `description`.
 
-### `policy` (object, required)
+---
 
-Freeform key-value map for contract-specific behavioural policies:
+## `PolicyExpr` — precondition grammar
 
-| Common key | Type | Meaning |
+Tagged union (`"kind"` discriminator):
+
+```json
+{ "kind": "capability", "name": "GPU_COMPUTE" }
+{ "kind": "principal",  "role": "provider" }
+{ "kind": "numeric",    "field": "budget", "op": ">=", "value": 100 }
+{ "kind": "proof",      "proof_type": "ComputeReceipt" }
+{ "kind": "and",        "exprs": [ <PolicyExpr>, ... ] }
+{ "kind": "or",         "exprs": [ <PolicyExpr>, ... ] }
+{ "kind": "not",        "expr": <PolicyExpr> }
+```
+
+---
+
+## CONTRACT CLASS VALIDATION RULES
+
+| Rule | Classes | Severity |
 |---|---|---|
-| `deadline_enforcement` | bool | Auto-slash stake if deadline missed |
-| `quality_threshold` | f64 | Min output quality score (0.0–1.0) for settlement |
-| `esu_tithe` | f64 | Èṣù justice tithe on all settlements (canonical: 0.0369) |
-| `fork_allowed` | bool | Agent may fork this contract's asset class |
-| `private_execution` | bool | Work is sealed (Seal protocol) — output not public |
-| `escalation_path` | string | On dispute: "council" | "peer-vote" | "auto-slash" |
-
-### `lifecycle` (array of strings, required)
-
-Ordered state labels forming the contract's state machine. First label is the
-initial state; last is terminal. All transitions are sequential by default
-unless a `policy.fork_allowed` creates branching.
-
----
-
-## CONTRACT CLASSES — SCHEMA AND VALIDATION
-
-### 1. `financial` — AsePool, treasury, staking
-
-Additional required fields: none beyond base schema.
-
-Validation:
-- `settlement.currency` must be `"ASE"` for native financial contracts
-- `evidence.required` should be `true` (Zàngbétò receipt on every flow)
-- At least one asset must contain `balance` or `pool` in its field list
-
-Typical lifecycle: `["OPEN", "FUNDED", "ACTIVE", "SETTLING", "CLOSED"]`
-
-### 2. `agent` — AgentRegistry, reputation, identity
-
-Validation:
-- `assets` must contain a field named `agent_id`
-- `capabilities` may be empty (agents don't always consume capabilities;
-  they ARE the capability origin)
-- `lifecycle` must include `"REGISTERED"` and `"DEREGISTERED"`
-
-Typical lifecycle: `["CREATED", "REGISTERED", "ACTIVE", "SUSPENDED", "DEREGISTERED"]`
-
-### 3. `work` — JobContract, GPU marketplace, task assignment
-
-Validation:
-- `capabilities` MUST be non-empty
-- `evidence.required` MUST be `true`
-- `settlement.provider_share` must be > 0.5 (provider does most of the work)
-- `lifecycle` must contain `"ASSIGNED"`, `"EXECUTED"`, `"VERIFIED"`, `"SETTLED"`
-
-Typical lifecycle: `["CREATED", "ASSIGNED", "ACCEPTED", "STARTED", "EXECUTED", "VERIFIED", "SETTLED"]`
-
-### 4. `device` — DeviceRegistry, VCP binding, sensor mesh
-
-Validation:
-- `assets` must contain a field named `device_id`
-- `evidence.type` must be `"DeviceAttestation"` when `evidence.required: true`
-- `lifecycle` must include `"BOUND"` and `"UNBOUND"`
-
-Typical lifecycle: `["DISCOVERED", "MANIFESTED", "BOUND", "ACTIVE", "SUSPENDED", "UNBOUND"]`
-
-### 5. `evidence` — ZangbetoReceipt, WitnessBundle, ARP receipts
-
-Validation:
-- `assets` must contain a field named `receipt_hash`
-- `settlement.fee_routing` should be `"direct"` (evidence contracts don't charge market fees)
-- `lifecycle` must include `"SUBMITTED"` and `"VERIFIED"`
-
-Typical lifecycle: `["SUBMITTED", "PENDING_WITNESS", "VERIFIED", "ARCHIVED"]`
-
-### 6. `governance` — CouncilDAO, proposal voting, constitutional gates
-
-Validation:
-- `assets` must contain fields `proposal_id` and `proposer`
-- `witness_policy.quorum` must be ≥ 7 (Council of 12 requires supermajority)
-- `lifecycle` must include `"PROPOSED"`, `"VOTING"`, `"ENACTED"`, `"REJECTED"`
-
-Typical lifecycle: `["PROPOSED", "SECONDED", "VOTING", "TALLYING", "ENACTED", "REJECTED"]`
+| `name` must not be empty | all | error |
+| Asset names must be unique | all | error |
+| `capabilities[].minimum_tier` must be 0–5 | all | error |
+| Action names must be unique | all | error |
+| `evidence.evidence_type` required when `evidence.required=true` | all | error |
+| `evidence.minimum_count` must be ≥ 1 | all | error |
+| `settlement.treasury_pct` must be in [0,100] | all | error |
+| `work` contracts: at least one action required | `work` | error |
+| `governance` + `move`-only target: suggest `native` | `governance` | warning |
+| `action.vessel` not in 16 canonical vessels | all | warning |
+| `settlement.currency` not in known set | all | warning |
 
 ---
 
-## VALIDATION RULES (COMPLETE)
+## CONTENT HASH
 
-The OSO-IR validator (`omokoda-core/src/oso_ir.rs`) enforces:
+Every `OsoIr` document exposes:
+```rust
+pub fn content_hash(&self) -> String  // BLAKE3 hex of canonical JSON
+```
 
-| Rule | Error |
-|---|---|
-| `oso_ir_version` must be `"1.0"` | `unknown oso_ir_version: X` |
-| `contract_class` must be a known class | `unknown contract_class: X` |
-| `contract_name` must match `[A-Z][A-Za-z0-9]{2,63}` | `contract_name fails PascalCase rule` |
-| `assets` must be non-empty | `assets cannot be empty` |
-| `work` contracts: `capabilities` must be non-empty | `work contracts must declare at least one capability` |
-| `work` contracts: `evidence.required` must be `true` | `work contracts require evidence` |
-| `work` contracts: `settlement.provider_share > 0.5` | `work provider_share must exceed 0.5` |
-| `governance` contracts: `witness_policy.quorum >= 7` | `governance quorum must be >= 7` |
-| `evidence` contracts: assets must include `receipt_hash` field | `evidence contracts require receipt_hash asset field` |
-| `settlement` shares must sum ≤ 1.0 | `settlement shares exceed 1.0` |
-| `lifecycle` must be non-empty | `lifecycle cannot be empty` |
-| `minimum_tier` must be 0–5 | `minimum_tier out of range` |
+---
+
+## EXAMPLE IR DOCUMENTS
+
+Six canonical examples live in `oso-ir/src/examples/mod.rs`:
+
+1. `financial_ase_pool()` — `ContractClass::Financial`, ASE pool, 6-pool routing, 3.69% tithe
+2. `agent_registry()` — `ContractClass::Agent`, agent registration with Nostr identity
+3. `work_gpu_compute_job()` — `ContractClass::Work`, GPU compute with ComputeReceipt evidence
+4. `device_registry()` — `ContractClass::Device`, VCP device binding, tier-2
+5. `evidence_zangbeto_receipt()` — `ContractClass::Evidence`, Zàngbétò receipt contract
+6. `governance_council_dao()` — `ContractClass::Governance`, 24-sector Council DAO
 
 ---
 
 ## COMPILER TARGETS
 
 ### Move (Sui / OSOVM L1)
+- One Move `struct` per `AssetDef`
+- One `public entry fun` per action
+- `CapabilityGrant` check at function entry
+- `EvidenceCommitment` assert before settlement
+- `transfer::transfer` to provider at settlement
 
-The Move codegen emits:
-- One Move `struct` per `AssetSpec`
-- One `public entry fun` per lifecycle transition
-- `CapabilityGrant` check at function entry for each declared capability
-- `EvidenceCommitment` assert before settlement calls
-- `transfer::transfer` to the provider address at settlement
-
-### WASM
-
-The WASM codegen emits:
-- One `wasm-bindgen` struct per `AssetSpec`
+### WASM (CosmWasm model)
+- One `wasm-bindgen` struct per `AssetDef`
 - Policy checks as `require!()` guards
-- Evidence as JS-side `Promise<Bytes>` resolved before `settle()`
+- Evidence resolved as `Promise<Bytes>` before `settle()`
+- Ọ̀ṢỌ́ host interfaces for storage, identity, receipts
 
-### Native (Rust)
-
-The Native codegen emits:
-- One Rust struct with `serde` derives per `AssetSpec`
-- `OsoIR::validate()` call at construction
+### Native (Rust ABCI)
+- One Rust struct with `serde` derives per `AssetDef`
+- `validate()` call at construction
 - Direct ASE transfer via OSOVM `execute_opcode()`
-
----
-
-## EXAMPLE: WorkContract (GPU Compute Marketplace)
-
-```json
-{
-  "oso_ir_version": "1.0",
-  "contract_class": "work",
-  "contract_name": "GPUComputeMarketplace",
-  "assets": [
-    {
-      "name": "ComputeJob",
-      "fields": ["job_id", "creator", "budget_mist", "gpu_requirement_gb", "deadline_unix"]
-    },
-    {
-      "name": "ComputeResult",
-      "fields": ["job_id", "provider", "output_hash", "gpu_seconds", "completed_at"]
-    }
-  ],
-  "capabilities": ["GPU_COMPUTE"],
-  "minimum_tier": 2,
-  "evidence": {
-    "required": true,
-    "type": "ComputeReceipt",
-    "fields": ["gpu_seconds", "output_hash", "device_id", "model_hash"]
-  },
-  "witness_policy": {
-    "quorum": 2,
-    "types": ["peer", "device"]
-  },
-  "settlement": {
-    "currency": "ASE",
-    "fee_routing": "6-pool",
-    "creator_share": 0.10,
-    "burn_share": 0.05,
-    "provider_share": 0.85
-  },
-  "policy": {
-    "deadline_enforcement": true,
-    "quality_threshold": 0.777,
-    "esu_tithe": 0.0369,
-    "escalation_path": "peer-vote"
-  },
-  "lifecycle": [
-    "CREATED", "ASSIGNED", "ACCEPTED", "STARTED",
-    "EXECUTED", "VERIFIED", "SETTLED"
-  ]
-}
-```
+- ABCI `DeliverTx` handler per action
 
 ---
 
@@ -321,4 +255,5 @@ The Native codegen emits:
 
 | Version | Date | Notes |
 |---|---|---|
-| 1.0 | 2026-09-15 | Initial specification (Phase 21.1 / 21.3) |
+| 1.0-draft | 2026-09-15 | Initial draft (Phase 21.1/21.3) |
+| 1.0-locked | 2026-09-24 | Phase 21.4 lock — matches oso-ir crate types exactly |

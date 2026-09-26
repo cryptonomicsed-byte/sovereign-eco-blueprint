@@ -275,7 +275,7 @@ function compute_score(claim::Dict)::Float64
 end
 ```
 
-1. `is_fully_verified(VMState(), claim)` — a **fresh empty VM**. Any check that consults VM state is vacuous by construction.
+1. `is_fully_verified(VMState(), claim)` — called with a **fresh empty VM** ("pass empty vm for non-gpu domains"). What this establishes: the gate cannot verify against real VM state, so its only input is the claim dict itself — either the check is self-referential (reads the claim it is validating) or it reads empty state (fails closed). Which of those it is must be resolved before this gate can be trusted; the comment reads as deliberate, the effect is unverified. *Correction note: an earlier revision of this section said "vacuous by construction", which is stronger than what I read. The body of the `is_fully_verified` reached here was not inspected.*
 2. `claimed_quantity` — caller-supplied.
 3. `bonus_multiplier_override` — a caller-supplied **multiplier**, overriding the ladder entirely.
 

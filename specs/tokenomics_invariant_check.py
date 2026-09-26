@@ -359,6 +359,63 @@ check(
     "scores must be GIX-addressable receipts signed by the verifier, not numbers on the request",
 )
 
+# ── I-25..I-29  The VERIFIER LAYER (Zangbeto witness quorum) ──────────────
+# proof_engine.jl:97 says independence = 0.8 "stub -- real: witness chain check".
+# This is that witness chain. It is the terminal dependency of the whole economy.
+
+# I-25  witness votes are signatures from distinct keypairs, not locally simulated
+hits = grep(r'witness_data\s*=\s*"witness-|collect_witness_votes', OSOVM / "src", glob="*.jl")
+check(
+    "I-25",
+    "Witness votes are signatures from distinct keypairs, not simulated in-process",
+    len(hits) == 0,
+    "\n".join(hits[:4]) if hits else "no local witness simulation",
+    "witnesses must be separate principals signing with their own keys over the receipt hash",
+)
+
+# I-26  the quorum outcome must not depend on a claimant-reported metric
+hits = grep(r"threshold\s*=\s*f1_score|approved\s*=\s*witness_hash\[1\]\s*<", OSOVM / "src", glob="*.jl")
+check(
+    "I-26",
+    "Quorum outcome cannot be tuned by a claimant-reported metric",
+    len(hits) == 0,
+    "\n".join(hits[:4]) if hits else "no claimant-tuned approval threshold",
+    "approval must come from a verified vote; f1_score must not set the approval probability",
+)
+
+# I-27  exactly one WitnessVote type and one quorum rule
+types = grep(r"^struct WitnessVote", OSOVM / "src", glob="*.jl")
+fields = grep(r"count\(v -> v\.(vote|approved)", OSOVM / "src", glob="*.jl")
+check(
+    "I-27",
+    "Exactly one WitnessVote type and one quorum rule (no duplicate struct / field drift)",
+    len(types) <= 1 and len({f.split("v ->")[-1].strip()[:12] for f in fields}) <= 1,
+    f"WitnessVote definitions: {len(types)}\n" + "\n".join(fields[:3]),
+    "declare WitnessVote once; both quorum functions must read the same field",
+)
+
+# I-28  TEE quotes are signature-verified, not merely measurement-compared
+hits = grep(r"verify_quote", OSOVM / "src", glob="*.jl")
+sig = grep(r"verify_attestation_signature|verify_quote_signature|sgx_dcap|tdx_verify|root_ca", OSOVM / "src")
+check(
+    "I-28",
+    "TEE attestation verifies the quote SIGNATURE, not just the measurement field",
+    len(sig) > 0,
+    f"verify_quote present, signature verification sites: {len(sig)}",
+    "compare enclave_id/measurement AND verify the quote signature against the vendor root",
+)
+
+# I-29  quorum failure must be a real possibility, not statistical noise
+check(
+    "I-29",
+    "Quorum failure is a real outcome, not a ~5% coin flip",
+    False,
+    "collect_witness_votes: p(approve) = 0.75 base, 0.8125 when f1_score >= 0.9\n"
+    "binomial(n=12): P(>=7 approvals) = 0.946 base, 0.995 at f1>=0.9\n"
+    "=> the claimant reduces failures 10x by reporting a high F1; failure is noise",
+    "approval must be evidence-driven; a designed approval rate is not a threshold",
+)
+
 # ── I-14 Birther royalty: implemented, or the column must not exist ────────
 col = grep(r"royalty_rate", VANTAGE / "backend")
 payer = grep(r"royalty_rate\s*\*|birther_royalty|royalty_payout", VANTAGE / "backend", KODA2 / "omokoda-core" / "src")

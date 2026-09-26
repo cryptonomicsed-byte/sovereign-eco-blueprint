@@ -201,6 +201,51 @@ Interface to the ladder — the multiplier applies to a *verified* quantity only
 reward = verified_gpu_hours × ladder_multiplier(domain) × proof_value     (proof_value >= threshold: hard gate)
 ```
 
+### 5.2 The verifier layer — what `independence` actually bottoms out in
+
+`proof_engine.jl:97` reads `independence = 0.8   # stub — real: witness chain check`. This is that witness chain (`OSOVM/src/zangbeto_receipts.jl:363`):
+
+```julia
+function collect_witness_votes(receipt_hash::AbstractString, f1_score::Float64)::Vector{WitnessVote}
+    for w in 0:(TOTAL_WITNESSES-1)
+        witness_data = "witness-$w-$receipt_hash"
+        witness_hash = bytes2hex(sha256(witness_data))
+        # Witness approves if hash starts with 0-b (75% base approval rate)
+        # High-F1 sims get higher approval (first char < 'd' = 81%)
+        threshold = f1_score >= 0.9 ? 'd' : 'c'
+        approved = witness_hash[1] < threshold
+        push!(votes, WitnessVote(w, receipt_hash, approved, witness_hash, now()))
+    end
+end
+```
+
+Three facts about that function:
+
+1. **The witnesses are generated in-process, in a loop.** No witness node, no network, no keypair, no signature. The "signature" is `sha256("witness-$w-$receipt_hash")` — a hash of the witness index. Every vote is computed by the same process that wants the receipt verified.
+2. **The vote is a weighted coin flip.** `witness_hash[1] < threshold` compares the first hex character to a letter. `'c'` = 12 of 16 hex chars = 75%; `'d'` = 13 of 16 = 81.25%. The source comment states these rates as *intended* behaviour.
+3. **The claimant chooses the bias.** The threshold is selected by `f1_score`, which arrives in the request. Reporting `f1_score >= 0.9` moves per-witness approval from 75% to 81.25%.
+
+Binomial consequence (n = 12, quorum ≥ 7):
+
+```
+P(quorum passes) = 0.946   base
+                 = 0.995   when the claimant reports f1_score >= 0.9
+```
+
+So the quorum passes 94.6% of the time by construction, and a claimant cuts the failure rate **tenfold** by reporting a higher score. Quorum failure is not a security outcome here — it is noise. That is why it has never looked broken: it is stable, deterministic per receipt hash, and reproducible. It has the *appearance* of consensus.
+
+Also in this layer: **two `WitnessVote` structs** (`zangbeto_receipts.jl:63`, `veilos_antispam.jl:67`) and two quorum functions reading **different fields** — `count(v -> v.vote, votes)` (`veilos_antispam.jl:303`) vs `count(v -> v.approved, votes)` (`zangbeto_receipts.jl:395`). One of them reads a field the receipt struct does not define. And `verify_quote` (`nautilus_attestation.jl`) compares `code_measurement` and derives a seal key but verifies **no quote signature** — the file's own comment concedes no enclave signature exists yet. "Attestation" currently means measurement equality.
+
+Why this is the terminal dependency: `independence` is one of six factors in `proof_value`. Supplied by a local lottery, one sixth of the score is unearned no matter how the other five are fixed — and the ladder's 5× `sim_to_real` tier, meant to be the hardest to fake, routes through this same function.
+
+What a real verifier layer needs:
+
+1. **Witnesses are distinct principals with keypairs.** A vote is an Ed25519 signature over `(receipt_hash, verdict)`; verification is signature verification. Note the crypto standard already exists ecosystem-wide — the BIP-340 → Ed25519 migration is *done* (`Witness-firmware/witness_lora_firmware.py:56`, `requirements.txt` with `coincurve` commented out, `sig_algo = "ed25519"`). This is wiring, not new cryptography.
+2. **One quorum rule, stated once.** `WITNESS_NODE_SPEC.md` says ≥2 witnesses at ≥66% agreement → 5×; the code says ≥7 votes with ≥4 approvals. Pick one.
+3. **Approval must be evidence-driven, never probability-tuned.** Any function of a claimant-supplied metric is a bias knob.
+4. **TEE: verify the quote signature against the vendor root**, or stop calling it attestation and label it measurement-equality.
+5. **Collusion cost is the point.** With *k* independent keyed witnesses, forging a receipt costs *k* keys. That is the only thing that makes a 5× multiplier meaningful.
+
 ## 6. Conversion flows
 
 **Purchase (human buys compute for a specific agent):**
@@ -295,6 +340,11 @@ Guards: per-epoch clamp `±0.002` (reuse `decay_clamp_per_epoch`), TWAP over the
 | I-22 | independence is computed from the witness chain, not a constant |
 | I-23 | presence of a value is not accepted as verification |
 | I-24 | the score is a signed attestation from a non-claimant, referenced by id |
+| I-25 | witness votes are signatures from distinct keypairs, not simulated in-process |
+| I-26 | quorum outcome cannot be tuned by a claimant-reported metric |
+| I-27 | exactly one `WitnessVote` type and one quorum rule |
+| I-28 | TEE attestation verifies the quote signature, not just the measurement |
+| I-29 | quorum failure is a real outcome, not a ~5% coin flip |
 
 ## 11. Constants deltas
 

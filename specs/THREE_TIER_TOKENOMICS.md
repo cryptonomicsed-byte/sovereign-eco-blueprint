@@ -246,6 +246,88 @@ What a real verifier layer needs:
 4. **TEE: verify the quote signature against the vendor root**, or stop calling it attestation and label it measurement-equality.
 5. **Collusion cost is the point.** With *k* independent keyed witnesses, forging a receipt costs *k* keys. That is the only thing that makes a 5× multiplier meaningful.
 
+### 5.3 The reward layer — two formulas, and both take the answer from the caller
+
+There are **two reward formulas for Dopamine**, and the documented one is not the one used.
+
+```
+used        COMPUTE_PROOF   oso_vm.jl:2458
+            dopamine_authorized = mint_eligible ? floor(gpu_hours x proof_value x 1000) : 0
+            -> no ladder multiplier at all
+
+documented  compute_score   oso_vm.jl:719   docstring: "Used for Dopamine allocation in TOC_MINT and EndBlock"
+            Score = claimed_quantity x effective_multiplier
+            -> has the ladder
+```
+
+`compute_score` reads all three of its inputs from the claim (`oso_vm.jl:719-737`):
+
+```julia
+function compute_score(claim::Dict)::Float64
+    if !is_fully_verified(VMState(), claim)   # pass empty vm for non-gpu domains
+        return 0.0
+    end
+    domain_multipliers = Dict("sim_to_real" => 5.0, "spatial_capture" => 2.0, ...)
+    domain = get(claim, "domain", "gpu_compute")
+    mult = get(claim, "bonus_multiplier_override",
+               get(domain_multipliers, domain, 1.0))
+    return get(claim, "claimed_quantity", 0.0) * mult
+end
+```
+
+1. `is_fully_verified(VMState(), claim)` — a **fresh empty VM**. Any check that consults VM state is vacuous by construction.
+2. `claimed_quantity` — caller-supplied.
+3. `bonus_multiplier_override` — a caller-supplied **multiplier**, overriding the ladder entirely.
+
+So the reward is `caller_quantity x caller_multiplier`. The honest Rust client always emits `"bonus_multiplier_override": null` (`verified_work.rs:352`), so this is a latent bypass reachable by any other `/run` caller rather than a live exploit from your own client — but the endpoint accepts it.
+
+**The ladder's anti-gaming caps are documentation.** The three guards the ladder comment calls "enforced at EndBlock / TOC_MINT gate":
+
+```
+per_agent_epoch_cap  = 50_000_000     occurrences outside TOC_CONSTANTS.toml: 0
+repeat_limit         = 3              occurrences outside TOC_CONSTANTS.toml: 0
+sim_to_real_min_tier = 2              occurrences outside TOC_CONSTANTS.toml: 0
+```
+
+Zero enforcement in OSOVM, omokoda-core or Vantage. A cap that nothing reads is worse than no cap, because it creates false confidence in the 5x and 10x tiers.
+
+**A fourth work -> ASE path exists, and it is the one the constitution forbids** (`veilsim_scorer.jl`):
+
+```julia
+const BASE_ASE_REWARD = 5.0                       # "Base Ase reward for F1 >= threshold"
+
+function calculate_reward(f1)
+    reward = 5.0
+    f1 >= 0.95 && (reward += 1.0)
+    f1 >= 0.98 && (reward += 0.5)
+    f1 >= 0.99 && (reward += 0.5)
+    reward                                        # 5.0 .. 7.0
+end
+
+# score_veil_execution:
+ase_amount = f1 >= F1_THRESHOLD ? calculate_reward(f1) : 0.0
+```
+
+`f1` is computed from `VeilMetrics.true_positives / false_positives / false_negatives / true_negatives` — struct fields supplied by the caller. Submit `tp=100, fp=0, fn=0` → `f1 = 1.0` → **7.0 ASE per call**, which `ase_minting.jl:211` then splits 50/25/10/10/5. That is a direct work -> ASE issuance path, forbidden by section 3, gated on claimant-supplied integers. (`oso_vm.jl:2247` adds `ase_amount = get(args, :ase_amount, 0.0)` on the job-payment path.)
+
+**Busy Beaver is the one real bound.** `omokoda-core/src/justice/busy_beaver.rs:101` is a spend governor, not an issuance path:
+
+```rust
+compute_bb_ceiling(synapses, tier, reputation, dna_fingerprint)
+    = synapses x tier_multiplier(tier) x reputation_factor(reputation) x entropy_score(dna_fingerprint)
+      .clamp(BB_FLOOR, BB_ABSOLUTE_CEILING)
+```
+
+It bounds how much work an agent may take on, and it correctly does **not** appear in the issuance registry. Worth preserving as the model: a clamped, state-derived bound with an explicit floor and ceiling.
+
+Reward-layer requirements:
+
+1. **One formula per unit.** Two disagreeing formulas means there is no formula.
+2. **Reward = f(verified work).** Quantity and multiplier both come from the protocol; neither from the request.
+3. **Caps enforced or deleted.** Implement the epoch cap, repeat limit and tier gates at the mint gate, or remove them from the spec so nobody trusts them.
+4. **No work -> ASE path.** Route that reward to Synapse; ASE's only issuance is the clock.
+5. **Gates receive real state.** `VMState()` is not a state.
+
 ## 6. Conversion flows
 
 **Purchase (human buys compute for a specific agent):**
@@ -345,6 +427,11 @@ Guards: per-epoch clamp `±0.002` (reuse `decay_clamp_per_epoch`), TWAP over the
 | I-27 | exactly one `WitnessVote` type and one quorum rule |
 | I-28 | TEE attestation verifies the quote signature, not just the measurement |
 | I-29 | quorum failure is a real outcome, not a ~5% coin flip |
+| I-30 | exactly one reward formula emits a given unit |
+| I-31 | no reward multiplier or quantity is read from the request |
+| I-32 | anti-gaming caps declared in TOC_CONSTANTS are enforced in code |
+| I-33 | no work → ASE issuance path exists |
+| I-34 | verification gates are not called with a fresh/empty state |
 
 ## 11. Constants deltas
 

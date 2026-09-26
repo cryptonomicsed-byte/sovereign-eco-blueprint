@@ -416,6 +416,64 @@ check(
     "approval must be evidence-driven; a designed approval rate is not a threshold",
 )
 
+# ── I-30..I-34  The REWARD LAYER (score -> emitted units) ─────────────────
+
+# I-30  one reward formula per unit (two disagreeing formulas = no formula)
+a = grep(r"dopamine_authorized\s*=|gpu_hours \* eval\.proof_value", OSOVM / "src" / "oso_vm.jl")
+b = grep(r"function compute_score|domain_multipliers\s*=", OSOVM / "src" / "oso_vm.jl")
+check(
+    "I-30",
+    "Exactly one reward formula emits a given unit",
+    not (a and b),
+    f"COMPUTE_PROOF formula (no ladder): {len(a)}\ncompute_score formula (with ladder): {len(b)}\n"
+    + "\n".join(b[:2]),
+    "collapse to one path; the documented ladder path is not the one COMPUTE_PROOF uses",
+)
+
+# I-31  reward multiplier and quantity never come from the request
+ov = grep(r"bonus_multiplier_override|claimed_quantity", OSOVM / "src", glob="*.jl")
+check(
+    "I-31",
+    "No reward multiplier or quantity is read from the request",
+    len(ov) == 0,
+    "\n".join(ov[:4]) if ov else "no request-supplied reward inputs",
+    "drop bonus_multiplier_override; multiplier comes from the protocol, quantity from verified work",
+)
+
+# I-32  declared anti-gaming caps are actually enforced
+missing = []
+for cap in ["per_agent_epoch_cap", "repeat_limit", "sim_to_real_min_tier"]:
+    in_impl = bool(grep(cap, OSOVM / "src", KODA2 / "omokoda-core" / "src", VANTAGE / "backend"))
+    if not in_impl:
+        missing.append(cap)
+check(
+    "I-32",
+    "Anti-gaming caps declared in TOC_CONSTANTS are enforced in code",
+    not missing,
+    "declared in TOC_CONSTANTS.toml, enforced nowhere: " + ", ".join(missing),
+    "implement epoch cap, repeat limit and tier gates at the mint gate, or delete the claims",
+)
+
+# I-33  no work -> ASE path (ASE is clock-only per the constitutional rule)
+hits = grep(r"BASE_ASE_REWARD|calculate_reward\(|ase_amount\s*=", OSOVM / "src", glob="*.jl")
+check(
+    "I-33",
+    "No work -> ASE issuance path exists",
+    len(hits) == 0,
+    "\n".join(hits[:4]) if hits else "no work->ASE reward path",
+    "veilsim_scorer mints 5.0-7.0 ASE per sim from caller-supplied tp/fp/fn; route to Synapse instead",
+)
+
+# I-34  verification gates receive real state, not a fresh empty one
+hits = grep(r"is_fully_verified\(VMState\(\)", OSOVM / "src", glob="*.jl")
+check(
+    "I-34",
+    "Verification gates are not called with a fresh/empty state",
+    len(hits) == 0,
+    "\n".join(hits[:3]) if hits else "no empty-state gate calls",
+    "pass the real VM state; an empty one makes the check vacuous",
+)
+
 # ── I-14 Birther royalty: implemented, or the column must not exist ────────
 col = grep(r"royalty_rate", VANTAGE / "backend")
 payer = grep(r"royalty_rate\s*\*|birther_royalty|royalty_payout", VANTAGE / "backend", KODA2 / "omokoda-core" / "src")

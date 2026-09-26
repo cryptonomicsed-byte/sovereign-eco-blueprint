@@ -291,6 +291,74 @@ check(
     "set a real Zangbeto anchor on the compute path, or the gate can never fire from inside",
 )
 
+# ── I-19..I-24  The VERIFIED SCORE (ProofEngine dimensions) ───────────────
+# proof_value = product of 6 dimensions. Each must derive from verified artifacts,
+# never from a request argument, and never default to a favourable value.
+
+# I-19  no scoring dimension is read from a request argument
+hits = grep(r"get\(args, :f1_score|get\(args, :gpu_seconds|get\(args, :difficulty|"
+            r"get\(args, :receipt_hash|get\(args, :environment_hash",
+            OSOVM / "src" / "oso_vm.jl", OSOVM / "src" / "vm_core.jl")
+check(
+    "I-19",
+    "No scoring dimension is sourced from a request argument",
+    len(hits) == 0,
+    "\n".join(hits[:4]) if hits else "no direct args reads in the scoring path",
+    "dimensions must be derived from verified receipts referenced by id, not passed as args",
+)
+
+# I-20  no dimension defaults to a favourable value when absent
+fav = grep(r'"difficulty", 1\.0|controller_stability", 0\.8|f1_score > 0\.0 \? clamp\(f1_score, 0\.0, 1\.0\) : 0\.5',
+           OSOVM / "src")
+check(
+    "I-20",
+    "No scoring dimension defaults to a favourable value when absent",
+    len(fav) == 0,
+    "\n".join(fav[:4]) if fav else "no favourable defaults",
+    "difficulty must default to 0 (not 1.0); quality to 0 (not 0.5)",
+)
+
+# I-21  verification is a HARD GATE (0 when unverified), not a discount
+hits = grep(r"verification\s*=\s*cumulative >= gpu_seconds \? 1\.0 : 0\.5", OSOVM / "src")
+check(
+    "I-21",
+    "Unverified work scores 0 on verification (a 0.5 floor is a subsidy)",
+    len(hits) == 0,
+    "\n".join(hits[:3]) if hits else "no 0.5 verification floor",
+    "unverified => verification = 0.0, which makes proof_value 0 and mint_eligible false",
+)
+
+# I-22  independence is computed by a witness chain, not a constant
+hits = grep(r"independence\s*=\s*(1\.0|0\.8)\s*(#|$)", OSOVM / "src", glob="*.jl")
+check(
+    "I-22",
+    "Independence is computed (witness chain), not a hardcoded constant",
+    len(hits) == 0,
+    "\n".join(hits[:4]) if hits else "no constant independence",
+    "wire the witness-chain check; a constant makes one sixth of proof_value free",
+)
+
+# I-23  presence of a string is not verification
+hits = grep(r"!isempty\((trajectory|checkpoint|sensor|sig|signature)\)", OSOVM / "src", glob="*.jl")
+check(
+    "I-23",
+    "Presence of a value is not accepted as verification (non-empty != valid)",
+    len(hits) == 0,
+    "\n".join(hits[:4]) if hits else "no presence-based verification",
+    "verify the signature/hash, do not score on isempty()",
+)
+
+# I-24  the score is a signed receipt from a non-claimant, referenced by id
+hits = grep(r"verify_score_signature|score_attestation|signed_score|verifier_pubkey",
+            OSOVM / "src", KODA2 / "omokoda-core" / "src")
+check(
+    "I-24",
+    "The score is a signed attestation from a non-claimant verifier, referenced by id",
+    len(hits) > 0,
+    "\n".join(hits[:4]) if hits else "no signed-score mechanism anywhere",
+    "scores must be GIX-addressable receipts signed by the verifier, not numbers on the request",
+)
+
 # ── I-14 Birther royalty: implemented, or the column must not exist ────────
 col = grep(r"royalty_rate", VANTAGE / "backend")
 payer = grep(r"royalty_rate\s*\*|birther_royalty|royalty_payout", VANTAGE / "backend", KODA2 / "omokoda-core" / "src")

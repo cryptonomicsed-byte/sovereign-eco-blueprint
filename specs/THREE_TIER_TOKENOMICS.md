@@ -138,6 +138,69 @@ And the three levels of reality that justify those numbers:
 
 `sim_to_real = 5x` needs no justification beyond that ordering, which is why it should never be raised above the witness-corroborated form.
 
+### 5.1 The verified score — the ladder grades a number that nothing verifies
+
+The scoring pipeline exists and its *shape* is right (`OSOVM/src/proof/proof_engine.jl:41`):
+
+```julia
+const MINT_THRESHOLD = 0.3
+
+proof_value = clamp(difficulty) × clamp(quality) × clamp(novelty)
+            × clamp(verification) × clamp(independence) × clamp(utility)
+
+mint_eligible = proof_value >= MINT_THRESHOLD
+```
+
+A product of six factors each ≤ 1.0 against a 0.3 threshold means all six must average ≈ 0.85 (`0.8^6 = 0.26` fails, `0.85^6 = 0.377` passes). That is a deliberately harsh gate — and it means **any factor that is free removes one sixth of the constraint**, which is exactly what happens today.
+
+Where the six inputs actually come from, verified:
+
+| Dimension | Source in code | Problem |
+|---|---|---|
+| `difficulty` | `clamp(log(1+gpu_seconds)/log(3601),0,1)` — `oso_vm.jl:2432` | `gpu_seconds` is a request argument |
+| | `max(get(proof,"difficulty",1.0),0)` — `proof_engine.jl:90,113` | **defaults to MAXIMUM** |
+| `quality` | `f1_score > 0 ? clamp(f1,0,1) : 0.5` — `oso_vm.jl:2435` | `f1_score` is a request argument; **absent ⇒ 0.5 free** |
+| | `metrics.controller_stability` default `0.8` — `proof_engine.jl:91` | favourable default |
+| `novelty` | `record!(ledger, env_hash)` — `oso_vm.jl:2438` | `env_hash` argument, defaults to `job_id` |
+| `verification` | `cumulative >= gpu_seconds ? 1.0 : 0.5` — `oso_vm.jl:2442` | **0.5 for UNVERIFIED — a subsidy, not a gate** |
+| | `!isempty(trajectory) ? 0.3 : 0.0` (+checkpoint 0.3 +sensor 0.2 +sig 0.2) — `proof_engine.jl:93-96` | presence scored as verification |
+| `independence` | `1.0` hardcoded — `oso_vm.jl:2445`; `0.8` "stub — real: witness chain check" — `proof_engine.jl:97` | constant, so free |
+| `utility` | `clamp(gpu_seconds/(8*3600),0,1)` — `oso_vm.jl:2447` | `gpu_seconds` argument |
+
+The arithmetic consequence — an attacker who supplies nothing real:
+
+```
+difficulty  1.00  (default when absent — the code picks MAX)
+quality     0.80  (default controller_stability)
+novelty     1.00  (first use of a fresh env_hash)
+verification 1.00 (four non-empty garbage strings)
+independence 0.80 (hardcoded stub)
+utility     0.92  (gates_cleared/gates_total = 1/1, stability 0.8)
+
+product = 0.589  >= 0.3   →  mint_eligible = TRUE, on fabricated evidence
+```
+
+And on the compute path, with **zero** verification: `0.9^4 × 0.5 × 1.0 = 0.328 ≥ 0.3` → mint eligible. The dimension that exists to be expensive is the cheap one.
+
+`compute_f1` (`veilsim_engine.jl`) is honest *as arithmetic* — TP/FP/FN over entities against `target_position` within `position_tolerance`, with veils active or settling. But the simulation state, the targets and the tolerances all arrive in the request. **The claimant sets the targets it is then scored against.** That is the self-authored exam, formalized: F1 measures whether the model agrees with itself.
+
+What a verified score requires:
+
+1. **Every dimension derives from a committed artifact referenced by id** (GIX `canonical_id`, receipt id, `sim_receipt_id`) — never from a request argument.
+2. **No favourable defaults.** Absent ⇒ `0`, never `1.0` / `0.8` / `0.5`. An absent input is an absent proof.
+3. **`verification` is a hard gate.** Unverified ⇒ `0` ⇒ `proof_value = 0` ⇒ not eligible. The 0.5 floor must go.
+4. **`independence` is computed from the witness chain** — *k* distinct witness pubkeys at ≥66% agreement — not a constant.
+5. **Presence is not validity.** Signatures and hashes are cryptographically verified (`ed25519-dalek` / `verify_quote`), never scored on `isempty()`.
+6. **The score is a signed attestation from a non-claimant verifier**, GIX-addressable, *referenced* by the issuance path rather than passed to it. Today no such mechanism exists anywhere (`I-24`).
+7. **Reproducibility.** A third party must be able to recompute `proof_value` from the committed evidence alone and get the same number. Without this the score is arithmetic on trust, not verification.
+8. **Per-level, per-tier rules:** `spatial_capture` — novel views selected by the verifier *after* capture; `sim_to_real` — `measurement_commitment` published *before* the measurement (the primitive already exists, `oso_vm.jl:690-691`, `require_measurement` per domain).
+
+Interface to the ladder — the multiplier applies to a *verified* quantity only:
+
+```
+reward = verified_gpu_hours × ladder_multiplier(domain) × proof_value     (proof_value >= threshold: hard gate)
+```
+
 ## 6. Conversion flows
 
 **Purchase (human buys compute for a specific agent):**
@@ -226,6 +289,12 @@ Guards: per-epoch clamp `±0.002` (reuse `decay_clamp_per_epoch`), TWAP over the
 | I-16 | every mint site appears in the §3.1 registry — a new one fails CI |
 | I-17 | the verified-work gate validates anchor authenticity, not non-emptiness |
 | I-18 | `toc_is_fully_verified` is reachable in the deployed configuration |
+| I-19 | no scoring dimension is sourced from a request argument |
+| I-20 | no scoring dimension defaults to a favourable value when absent |
+| I-21 | unverified work scores 0 on verification (no 0.5 floor) |
+| I-22 | independence is computed from the witness chain, not a constant |
+| I-23 | presence of a value is not accepted as verification |
+| I-24 | the score is a signed attestation from a non-claimant, referenced by id |
 
 ## 11. Constants deltas
 
@@ -238,6 +307,10 @@ Guards: per-epoch clamp `±0.002` (reuse `decay_clamp_per_epoch`), TWAP over the
 | `ase.max_daily_emission` | `1440` | rename to `daily_emission_total_ase` | I-11 |
 | `inheritance.seat_count` | `1440` | rename to `inheritance_seat_count` | I-11 |
 | pools | 8-pool **and** 5-wallet | **one** | I-5 |
+| `compute_proof.verification_floor` | `0.5` hardcoded | **remove** (unverified ⇒ 0) | I-21 |
+| `compute_proof.independence` | `1.0` / `0.8` hardcoded | **computed** from witness chain | I-22 |
+| `proof_engine.MINT_THRESHOLD` | `0.3` | keep, but document: 6-factor product ⇒ ≈0.85 avg required | §5.1 |
+| `proof.difficulty` default | `1.0` | **`0.0`** | I-20 |
 
 ## 12. Naming hygiene (enforced in prose and in code)
 

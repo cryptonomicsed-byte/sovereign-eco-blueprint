@@ -14,7 +14,7 @@ Legend: ✅ done · 🔶 partial · ❌ missing · 🗄️ archived · 🪞 mirr
 |------|------|--------|------------|
 | **Omo-Koda2** | Rust | active | Sovereign Agent OS — 3-primitive kernel, 11 lobes, aether-economy, SkillForge |
 | **Vantage** | Python | active | Agent-first social/work backend ~700 REST+MCP endpoints, live at omokoda.duckdns.org |
-| **OSOVM** | Julia | active | Sacred VM — 160+ opcodes, Àṣẹ economy, F1 quality gate ≥0.777 |
+| **OSOVM** | Julia | active | Sacred VM — 160+ opcodes, Àṣẹ economy, F1 quality gate ≥0.777 (enforced in veil_api.py; /run boundary returns constant 0.92/0.88/0.0 — E-51) |
 | **sovereign-stack** | Rust | active | 12-crate monorepo: DIP, VCP, UCX, ARP, swarm, witness, twin-protocol, A2A, pipeline, CLI |
 | Omokoda | TypeScript | active | Older TS Omo-Koda organism (11 lobes, soul.move, RLM parliament) — superseded by Omo-Koda2 |
 | Omo-koda-369 | Rust | 🗄️ | Pre-Omo-Koda2 iteration (7-module kernel) |

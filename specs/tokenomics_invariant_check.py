@@ -14,6 +14,7 @@ of failing checks, so CI can gate on it.
 Run:  python3 specs/tokenomics_invariant_check.py
 """
 
+import collections
 import os
 import re
 import subprocess
@@ -717,6 +718,57 @@ check(
     f"untested: {', '.join(_untested) if _untested else '(none)'}\n"
     f"an uninvoked handler is where a dead endpoint hides",
     "add a test per handler that calls it and asserts on the response body",
+)
+
+# ── I-50  A function that computes a scored quantity must be reachable ──────
+# Four times now the violation has lived in DEAD code: mint_ase_for_veil with
+# its 50/25 revenue split (I-5), evaluate_simulation/evaluate_gaussian with
+# difficulty=1.0 / quality=0.8 / independence=0.8 (I-20), and
+# src/scoring/simulation_scoring.jl -- a whole module never `include`d, carrying
+# an all-1.0 default constructor, a 7-factor product that diverges from the live
+# 6-factor one, and a division guard that returns full credit.
+#
+# The gate greps source text, so it cannot distinguish dead from live code: a
+# generous default inside an unreachable function reads exactly like a live bug.
+# That is why each of these was found by hand. Negative invariants measure text,
+# not behaviour (spec 3.4b), and reachability is behaviour.
+#
+# Scoped to scoring vocabulary on purpose: a naive zero-reference census flags
+# 24 of 625 functions including demo helpers (doThing, stopIt) and print
+# utilities, which would make the check noise and train people to ignore it.
+# Scoring vocabulary narrows it to the class that has actually bitten.
+_SCORING_VOCAB = re.compile(
+    r"score|difficulty|quality|novelty|verification|independence|utility|emission|reward",
+    re.IGNORECASE,
+)
+_bodies: list[str] = []
+for _root in (OSOVM / "src", OSOVM / "test", KODA2, VANTAGE):
+    if not _root.exists():
+        continue
+    for _p in _root.rglob("*.jl"):
+        if _p.is_file() and "julia-1.10" not in str(_p):
+            try:
+                _bodies.append(_p.read_text(errors="ignore"))
+            except OSError:
+                pass
+_blob = "\n".join(_bodies)
+_id_counts = collections.Counter(re.findall(r"[A-Za-z_][A-Za-z0-9_!]*", _blob))
+_def_counts = collections.Counter(
+    re.findall(r"^\s*function\s+([A-Za-z_][A-Za-z0-9_!]*)", _blob, re.M)
+)
+_unreachable = sorted(
+    n for n, d in _def_counts.items()
+    if _id_counts.get(n, 0) - d <= 0 and _SCORING_VOCAB.search(n)
+)
+check(
+    "I-50",
+    "A function computing a scored quantity is reachable from live code",
+    len(_unreachable) == 0,
+    f"zero-reference scoring functions: {len(_unreachable)}\n"
+    + "\n".join(_unreachable[:5]),
+    "delete the dead function, or wire it to the canonical factor site "
+    "(compute_evaluation) with attested inputs — never leave generous defaults "
+    "in code nobody can reach",
 )
 
 # ── Unmeasured input is a failure, reported last so it is not buried ────────

@@ -215,6 +215,88 @@ def check_julia_pool_drift(toml: dict) -> list[str]:
     return errors
 
 
+def check_duplicate_literals(toml: dict) -> list[str]:
+    """
+    I-11 generalised: flag any numeric literal that appears under two or more
+    DISTINCT keys with no shared semantic parent.
+
+    Allowed duplicates (same concept, different granularity):
+      - dopamine.dop_per_gpu_hour / dopamine.dop_per_gpu_second  (same pool, hour vs second)
+      - synapse.base_cost_ase / birthright.qualifying_fraction / gates.stake_fraction
+        (all 0.1 / 1.0 but with distinct descriptions — coincidental equality, documented)
+
+    Disallowed: same literal value in two economically unrelated constants where the
+    collision could cause a developer to substitute one for the other in code.
+
+    Currently tracked suspicious pairs:
+      - synapse.per_gpu_hour = 1000.0 and dopamine.dop_per_gpu_hour = 1000.0
+        These are intentionally equal (deliberate denomination decision) but must be
+        flagged until the architecture formally decides whether DOP and SYN share a
+        GPU-hour rate.  Tracked: open architectural question in THREE_TIER_ECONOMIC_CONSTITUTION §3.
+    """
+    errors = []
+
+    # Map value → [(section.key, description)]
+    by_value: dict[float, list[str]] = {}
+    for key, val in toml.items():
+        by_value.setdefault(val, []).append(key)
+
+    # Pairs that are deliberately equal — document the reason and suppress
+    allowed_pairs: set[frozenset[str]] = {
+        # dop/hour and dop/second — same pool, derived relationship
+        frozenset({"dopamine.dop_per_gpu_hour", "dopamine.dop_per_gpu_second"}),
+        # 24.0: emission_window_hours (hours in a day) vs sector_count (24 governance sectors)
+        # Coincidentally equal; no semantic relationship.
+        frozenset({"ase.emission_window_hours", "inheritance.sector_count"}),
+        # 10.0: birth_fee (10 ASE) vs sim_to_real_max (10.0× multiplier ceiling)
+        # Coincidentally equal; different units (ASE vs multiplier).
+        frozenset({"ase.birth_fee", "bonus_ladder.sim_to_real_max"}),
+    }
+
+    # Suspicious pairs that require an explicit architectural decision
+    suspicious_pairs: list[tuple[str, str, str]] = [
+        (
+            "synapse.per_gpu_hour",
+            "dopamine.dop_per_gpu_hour",
+            "Both = 1000.0 (SYN/GPU-hr vs DOP/GPU-hr). Deliberate equal denomination or "
+            "coincidence? Needs architectural sign-off — see THREE_TIER_ECONOMIC_CONSTITUTION §3.",
+        ),
+    ]
+
+    for key_a, key_b, note in suspicious_pairs:
+        val_a = toml.get(key_a)
+        val_b = toml.get(key_b)
+        if val_a is not None and val_b is not None and abs(val_a - val_b) < 1e-9:
+            errors.append(
+                f"DUPLICATE LITERAL ({val_a}): {key_a} and {key_b} share the same value. {note}"
+            )
+
+    # General scan: flag large values (≥10.0) appearing in ≥2 unrelated sections.
+    # Small fractions (0.05, 0.10, 0.25, etc.) coincidentally collide everywhere
+    # and are below the threshold of meaningful duplication.
+    for val, keys in by_value.items():
+        if val < 10.0 or len(keys) < 2:
+            continue
+        sections = {k.split(".")[0] for k in keys}
+        if len(sections) < 2:
+            continue
+        # Suppress allowed pairs
+        key_set = frozenset(keys)
+        if any(allowed <= key_set for allowed in allowed_pairs):
+            continue
+        # Only flag if no existing suspicious_pairs entry already covers this
+        already_covered = any(
+            frozenset({a, b}) <= key_set for a, b, _ in suspicious_pairs
+        )
+        if not already_covered:
+            errors.append(
+                f"DUPLICATE LITERAL ({val}) in {len(keys)} keys across {len(sections)} sections: "
+                + ", ".join(sorted(keys))
+            )
+
+    return errors
+
+
 def main():
     toml_path = ROOT / "sovereign-eco-blueprint/specs/TOC_CONSTANTS.toml"
     if not toml_path.exists():
@@ -227,6 +309,7 @@ def main():
     errors.extend(check_pool_weights(toml))
     errors.extend(check_key_constants(toml))
     errors.extend(check_julia_pool_drift(toml))
+    errors.extend(check_duplicate_literals(toml))
 
     if errors:
         print("TOC_CONSTANTS DRIFT DETECTED:", file=sys.stderr)

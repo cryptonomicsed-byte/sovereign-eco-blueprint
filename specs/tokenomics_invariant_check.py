@@ -515,6 +515,63 @@ check(
     "bind the seal to the referent (withheld artefact root), or stop treating the seal as verification",
 )
 
+# ── I-38..I-42  THE HTTP SURFACE (where all of the above becomes reachable) ─
+
+SERVER = OSOVM / "src" / "server.jl"
+
+# I-38  mint-capable opcodes require authority over HTTP
+auth = grep(r"authorization|bearer|api_key|apikey|x-api-key|authenticate|verify_request_signature",
+            SERVER)
+check(
+    "I-38",
+    "Mint-capable opcodes require authenticated authority over HTTP",
+    len(auth) > 0,
+    f"auth-related lines in server.jl: {len(auth)}",
+    "POST /run executes IMPACT (0x11, 'Mint ASE from work') with no key, token or signature",
+)
+
+# I-39  the caller cannot choose the credited identity
+hits = grep(r"vm\.current_sender\s*=\s*agent|:agent, \"genesis\"", SERVER)
+check(
+    "I-39",
+    "The caller cannot choose the credited identity",
+    len(hits) == 0,
+    "\n".join(hits[:3]) if hits else "identity is bound",
+    "current_sender must come from an authenticated principal, not a request field",
+)
+
+# I-40  the API does not report a score it never computed
+hits = grep(r"ase_minted > 0\.0 \? 0\.92|\? 0\.92 :", SERVER)
+check(
+    "I-40",
+    "The API does not report a score it never computed",
+    len(hits) == 0,
+    "\n".join(hits[:3]) if hits else "no fabricated score in the response",
+    "delete the 0.92/0.88 heuristic; return a score only if one was computed",
+)
+
+# I-41  gated paths must be reachable -> state must outlive a request
+hits = grep(r"OsoVM\.create_vm\(\)", SERVER)
+check(
+    "I-41",
+    "No gated path is architecturally unreachable (state must outlive a request)",
+    len(hits) == 0,
+    ("\n".join(hits[:3]) + "\n=> fresh VM per request: GPU_CONTRIBUTION state is discarded, so "
+     "toc_is_fully_verified can never pass, while stateless mints (IMPACT/ASE_MINT) still work")
+    if hits else "state persists across requests",
+    "persist VM state (or the contribution log) so the gated path can actually accumulate proof",
+)
+
+# I-42  mint-capable opcodes are not publicly enumerable
+hits = grep(r"function handle_opcodes|CORE_OPCODES|EXPANSION_OPCODES", SERVER)
+check(
+    "I-42",
+    "Mint-capable opcodes are not publicly enumerable by unauthenticated callers",
+    len(hits) == 0,
+    "\n".join(hits[:3]) if hits else "opcode table is not exposed",
+    "GET /opcodes publishes every mint-capable opcode name to anonymous callers",
+)
+
 # ── I-14 Birther royalty: implemented, or the column must not exist ────────
 col = grep(r"royalty_rate", VANTAGE / "backend")
 payer = grep(r"royalty_rate\s*\*|birther_royalty|royalty_payout", VANTAGE / "backend", KODA2 / "omokoda-core" / "src")

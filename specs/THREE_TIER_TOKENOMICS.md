@@ -131,6 +131,37 @@ That table is why the ladder is correct — it is already a monotone ranking of 
 2. **Every score names its referent**, and the referent is withheld by a non-claimant (`I-36`).
 3. **A seal is integrity, not truth.** A seal may *bind* a referent; it may never *stand in* for one (`I-37`).
 
+### 3.4 The HTTP surface — where every finding above becomes reachable
+
+`OSOVM/src/server.jl` exposes 12 routes. The one that executes opcodes has no authentication of any kind.
+
+```
+grep -cniE 'authorization|bearer|api_key|apikey|token|signature|authenticate' src/server.jl
+0
+```
+
+Verified properties of `POST /run` (`server.jl:124-208`):
+
+| Property | Verified behaviour |
+|---|---|
+| **Auth** | none. Parse JSON → resolve opcode → execute. No key, no bearer, no signature, no allowlist. |
+| **Identity** | `agent = string(get(body_obj, :agent, "genesis"))` → `vm.current_sender = agent`. The caller **chooses which account is credited**, by string. |
+| **Opcode selection** | `resolve_opcode` accepts any name in `CORE_OPCODES`/`EXPANSION_OPCODES`, and `:IMPACT => 0x11 """"" # @impact - Mint Aṣẹ from work"""""` is in the **core** table. `:TOC_MINT`, `:GPU_CONTRIBUTION`, `:COMPUTE_PROOF`, `:GENESIS_FLAW_TOKEN` are all reachable the same way. |
+| **Enumeration** | `GET /opcodes` returns the full core + expansion tables, unauthenticated. The API advertises every mint-capable opcode to anonymous callers. |
+| **Score** | the response reports an `f1_score` the server never computed: `f1_score = ase_minted > 0.0 ? 0.92 : (status=="error" ? 0.0 : 0.88)`. |
+| **State** | a fresh VM per request, so nothing accumulates — which is what makes the gated paths unreachable and the ungated ones trivially usable. |
+| **Disclosure** | the response echoes the whole `vm_result`, all receipts, and a `vm_state_hash`. Internal state is returned to any caller. |
+
+One request is sufficient:
+
+```
+curl -s -X POST http://<host>:7780/run \
+     -H 'Content-Type: application/json' \
+     -d '{"opcode":"IMPACT","args":{"ase":1000000},"agent":"any-name-i-choose"}'
+```
+
+That is the whole attack. No account, no key, no prior state, no setup. The 26 other failing invariants describe *what* the system fails to check; this section describes *how* anyone reaches it.
+
 ## 4. Redefining IMPACT — semantics first, deletion later
 
 Current semantics: *"I say I did impact worth X, therefore credit me X."* That is structurally incompatible with a receipt architecture.
@@ -474,6 +505,11 @@ Guards: per-epoch clamp `±0.002` (reuse `decay_clamp_per_epoch`), TWAP over the
 | I-35 | the score is an output of verification, never an input to a decision function |
 | I-36 | every score names the referent it was checked against |
 | I-37 | a tamper-evidence seal is not consumed as evidence of the claim's truth |
+| I-38 | mint-capable opcodes require authenticated authority over HTTP |
+| I-39 | the caller cannot choose the credited identity |
+| I-40 | the API does not report a score it never computed |
+| I-41 | no gated path is architecturally unreachable (per-request state) |
+| I-42 | mint-capable opcodes are not publicly enumerable |
 
 ## 11. Constants deltas
 

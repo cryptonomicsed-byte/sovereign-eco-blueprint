@@ -163,17 +163,15 @@ def _self_test(hit_log: list[str]) -> int:
 
     Three assertions:
       (a) no control bytes in any hit — a NUL or backspace means binary leaked through
-      (b) cache-independence — a .pyc planted inside a scanned root must not appear
-          in output; the source file in the same root must still be found
+      (b) each guard in grep() is independently falsifiable via a three-probe fixture:
+            plain.pyc     — plain text, no NULs, root dir   — only SUFFIX guard catches it
+            sneaky.jl     — NUL bytes, .jl name, root dir   — only NUL guard catches it
+            __pycache__/notes.jl — plain text, .jl, skip dir — only SKIP-DIR guard catches it
+            source.jl     — legitimate source, root dir     — must still be found
+          Dropping any one guard fails exactly the probe that guard owns.
+          The previous single-probe design (one .pyc with NULs in __pycache__) was caught
+          by all three guards simultaneously, so a dropped guard hid behind its neighbours.
       (c) every cited path has a source extension, never a compiled artifact
-
-    (b) uses a synthetic fixture rather than running the same walk twice.
-    Two consecutive walks over the same tree always agree (rglob is deterministic),
-    so that design only tests walk determinism, not cache-independence. The
-    simulation confirms this: with guards disabled and NUL bytes in output, (b) as
-    originally written still reported ST-PASS while (a) and (c) fired. The fixture
-    approach is falsifiable: disable the _SKIP_DIRS / _BINARY_SUFFIXES / NUL guards
-    in grep() and (b) fails.
 
     Run via:  python3 specs/tokenomics_invariant_check.py --self-test
     Exit code is the count of self-test failures so CI can gate on it separately
@@ -208,32 +206,37 @@ def _self_test(hit_log: list[str]) -> int:
     else:
         print(f"[ST-PASS] (c) no compiled artifacts in {len(hit_log)} hit(s)")
 
-    # (b) Cache-independence: a .pyc planted in a scanned root must not appear
+    # (b) Each guard is independently falsifiable — three probes, one per guard
     with tempfile.TemporaryDirectory() as _td:
         _troot = Path(_td)
-        # Source file: contains the probe pattern and should be found
-        (_troot / "probe.jl").write_text("module Probe\nend\n")
-        # Compiled artifact: same text + NUL bytes, inside a __pycache__ dir
-        _pycache = _troot / "__pycache__"
-        _pycache.mkdir()
-        (_pycache / "probe.cpython-313.pyc").write_bytes(
-            b"\x00\x00module Probe\x00end\x00"
-        )
+        # Legitimate source — must be found (guards must not be over-aggressive)
+        (_troot / "source.jl").write_text("module ProbeSource\nend\n")
+        # SUFFIX probe: plain text, no NULs, root dir — only suffix guard catches it
+        (_troot / "plain.pyc").write_text("module ProbeSuffix\n")
+        # NUL probe: NUL bytes inside, .jl extension, root dir — only NUL guard catches it
+        (_troot / "sneaky.jl").write_bytes(b"\x00module ProbeNul\x00")
+        # SKIP-DIR probe: plain text, .jl extension, __pycache__ — only skip-dir catches it
+        (_pycache := _troot / "__pycache__").mkdir()
+        (_pycache / "notes.jl").write_text("module ProbeSkipDir\n")
+
         _hits_b = grep(r"\bmodule\b", _troot)
         _files_b = {h.split(":")[0] for h in _hits_b}
-        _has_source = any("probe.jl" in f for f in _files_b)
-        _has_compiled = any("probe.cpython-313.pyc" in f for f in _files_b)
-        if _has_compiled:
-            print("[ST-FAIL] (b) .pyc artifact appeared in scan — at least one guard is bypassed")
-            for h in _hits_b:
-                if ".pyc" in h:
-                    print(f"          {h}")
-            fails += 1
-        elif not _has_source:
-            print("[ST-FAIL] (b) source file not found — guard is too aggressive")
+        _b_fails: list[str] = []
+        if any("plain.pyc" in f for f in _files_b):
+            _b_fails.append("suffix guard bypassed — plain.pyc appeared")
+        if any("sneaky.jl" in f for f in _files_b):
+            _b_fails.append("NUL guard bypassed — sneaky.jl appeared")
+        if any("notes.jl" in f for f in _files_b):
+            _b_fails.append("skip-dir guard bypassed — __pycache__/notes.jl appeared")
+        if not any("source.jl" in f for f in _files_b):
+            _b_fails.append("guard over-aggressive — source.jl not found")
+        if _b_fails:
+            print(f"[ST-FAIL] (b) {len(_b_fails)} guard(s) failed:")
+            for msg in _b_fails:
+                print(f"          {msg}")
             fails += 1
         else:
-            print(f"[ST-PASS] (b) cache-independent — .pyc filtered, source found")
+            print("[ST-PASS] (b) all 3 guards verified independently, source found")
 
     print("─" * 72)
     if fails:

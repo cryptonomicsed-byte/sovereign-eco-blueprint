@@ -65,37 +65,91 @@ ALLOW_ABSENT: tuple[str, ...] = tuple(
 def strip_jl_comments(text: str) -> str:
     """Drop Julia `#` line comments and triple-quoted docstrings before matching.
 
-    Two passes, in this order:
+    Single-pass character-state scanner. Tracks whether the cursor is inside a
+    triple-quoted string, a single-quoted string, or neither:
 
-    1. Strip `#`-to-EOL comments (guarded by even-quote count).
-       Must come FIRST so that a comment like  # the \"\"\" marker
-       cannot pair with the next real docstring in pass 2, which would
-       silently delete source lines between them.
+    - Inside a triple-quoted span: emit newlines only (blank-line replacement
+      keeps stripped and raw line lists the same length so grep() citations
+      point at the correct source line; no other character is emitted).
+    - Inside a single-char string (bounded by a single \"): emit verbatim
+      (# inside a string is not a comment delimiter).
+    - Otherwise: a `#` starts a line comment (emit up to but not including it)
+      and a `\"\"\"` opens a triple-quoted span.
 
-    2. Replace each triple-quoted span with an equal number of blank lines.
-       Blank replacement (not a sentinel token) keeps the stripped line list
-       the same length as the raw line list, so the zip in grep() stays
-       aligned and citations point at the correct source line.
+    This avoids the two known failure modes of regex-pairing:
+    - A # comment whose text contains \"\"\" orphaning a closing delimiter and
+      deleting the real code between them.
+    - A docstring whose last line ends with # (e.g. '...§#4\\.\"\"\"') having
+      its closing delimiter consumed by the # pass, orphaning the next opener.
     """
-    import re
+    out: list[str] = []
+    line_buf: list[str] = []
+    in_triple = False
+    in_single = False
+    i = 0
+    n = len(text)
 
-    # Pass 1: strip # comments
-    lines = []
-    for line in text.splitlines():
-        i = line.find("#")
-        while i != -1:
-            if line[:i].count('"') % 2 == 0:
-                line = line[:i]
-                break
-            i = line.find("#", i + 1)
-        lines.append(line)
-    text = "\n".join(lines)
+    while i < n:
+        ch = text[i]
 
-    # Pass 2: replace docstring spans with equal-length blank-line runs
-    def _blank_span(m: "re.Match[str]") -> str:
-        return "\n" * m.group(0).count("\n")
+        if in_triple:
+            if ch == "\n":
+                # Blank-line replacement: preserve the newline, clear the buffer
+                out.append("")
+                line_buf = []
+                i += 1
+            elif text[i:i+3] == '"""':
+                in_triple = False
+                i += 3
+            else:
+                i += 1  # swallow docstring content
 
-    return re.sub(r'""".*?"""', _blank_span, text, flags=re.DOTALL)
+        elif in_single:
+            if ch == "\n":
+                # Unterminated single-quote string — treat as closed at EOL
+                in_single = False
+                out.append("".join(line_buf))
+                line_buf = []
+                i += 1
+            elif ch == '"':
+                in_single = False
+                line_buf.append(ch)
+                i += 1
+            elif ch == "\\":
+                line_buf.append(ch)
+                i += 1
+                if i < n:
+                    line_buf.append(text[i])
+                    i += 1
+            else:
+                line_buf.append(ch)
+                i += 1
+
+        else:
+            if ch == "\n":
+                out.append("".join(line_buf))
+                line_buf = []
+                i += 1
+            elif text[i:i+3] == '"""':
+                in_triple = True
+                i += 3
+            elif ch == '"':
+                in_single = True
+                line_buf.append(ch)
+                i += 1
+            elif ch == "#":
+                # Line comment: consume to EOL, then emit the (stripped) line
+                while i < n and text[i] != "\n":
+                    i += 1
+                # the \n itself is handled on the next iteration
+            else:
+                line_buf.append(ch)
+                i += 1
+
+    if line_buf:
+        out.append("".join(line_buf))
+
+    return "\n".join(out)
 
 
 def grep(pattern: str, *roots: Path, glob: str = "", fixed: bool = False) -> list[str]:

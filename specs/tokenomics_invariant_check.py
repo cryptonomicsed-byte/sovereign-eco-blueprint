@@ -682,6 +682,32 @@ check(
 )
 
 
+# ── I-49 Handlers must be exercised by a test ──────────────────────────────
+# server.jl's POST /run threw UndefVarError on every call for an unknown length
+# of time: its bindings were assigned inside a `try` block and read outside it,
+# and in Julia a try block is a scope. Nothing noticed because no test ever
+# invoked the handler -- 1,124 tests, zero references to handle_run. A handler
+# nobody calls is where a dead endpoint hides, so gate on the reference itself.
+_srv_path = OSOVM / "src" / "server.jl"
+_handlers = (
+    re.findall(r"^function (handle_[a-z_]+)", _srv_path.read_text(), re.M)
+    if _srv_path.exists() else []
+)
+_tested: set[str] = set()
+if _handlers:
+    _refs = grep("|".join(_handlers), OSOVM / "test")
+    _tested = {h for h in _handlers if any(h in ln for ln in _refs)}
+_untested = sorted(set(_handlers) - _tested)
+check(
+    "I-49",
+    "Every HTTP handler is exercised by a test that invokes it",
+    len(_untested) == 0,
+    f"handlers in server.jl: {len(_handlers)} | invoked from test/: {len(_tested)}\n"
+    f"untested: {', '.join(_untested) if _untested else '(none)'}\n"
+    f"an uninvoked handler is where a dead endpoint hides",
+    "add a test per handler that calls it and asserts on the response body",
+)
+
 # ── Unmeasured input is a failure, reported last so it is not buried ────────
 # A root the gate could never look at is NOT a passed check -- I-44 applied to
 # the gate itself. Declared-absent roots print [SKIP] and never a pass, so a

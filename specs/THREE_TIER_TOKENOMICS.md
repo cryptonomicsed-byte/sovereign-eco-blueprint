@@ -150,20 +150,55 @@ Three of the four are constants. Sample an `f1_score` at random in this system a
 
 That matters because of where it lands. Any consumer that persists this value — receipts (`zangbeto_receipts.jl:336` serialises `f1_score` into CBOR), telemetry, agent logs, another agent's context — produces a record indistinguishable from a real measurement. That is how a fabricated number becomes evidence: not by being signed, but by being **stored under a name that implies measurement**.
 
-#### The loop closes
+#### The loop does NOT close — the handler throws before it can
 
-The API both issues the value and accepts it:
+An earlier revision of this section asserted the chain below on the strength of
+reading source. It has since been **executed**, and it is false: `POST /run`
+throws on every call and never builds a response at all.
+
+`handle_run` assigns `vm_result`, `receipts_out`, `ase_minted` and `f1_score`
+*inside* its `try` block (`server.jl:169-183`), then reads `vm_result` *outside*
+it (`server.jl:194`). In Julia a `try` block introduces a scope, so those
+bindings never escape it. Verified on julia 1.11.5 — the version
+`arm-determinism.yml` pins:
+
+```
+$ julia -e 'function f(); try; x = 42; catch e; end; return x; end; println(f())'
+ERROR: UndefVarError: `x` not defined in `Main`
+```
+
+Line 194 sits past the end of the `try`, so the `catch` clause does not cover it:
+the error is uncaught, `error_response` is never reached, and the response dict
+containing `f1_score` is never constructed. Therefore:
+
+- `server.jl:181` never returns `0.92`. It is **unreachable**, not exploitable.
+  The tautology analysis above stands as analysis, but no caller can reach it.
+- `I-45`'s evidence ("emitted in 3 response(s)") counts assignment *sites*, not
+  emissions. Nothing is emitted. Reachability was assumed, never executed.
+- The `IMPACT` -> `COMPUTE_PROOF` chain below cannot run at all: both calls enter
+  this handler.
+
+The chain is retained to show what was believed. Note that the second call needs
+no prior state — which is exactly what made it read as plausible:
 
 ```
 POST /run {"opcode":"IMPACT","args":{"ase":1}}
-  -> response: {"f1_score": 0.92, "ase_minted": 1, ...}
+  -> response: {"f1_score": 0.92, "ase_minted": 1, ...}        # never built
 
 POST /run {"opcode":"COMPUTE_PROOF","args":{..., "f1_score":0.92}}
-  -> oso_vm.jl:2420   quality = clamp(f1_score) = 0.92
+  -> oso_vm.jl:2420   quality = clamp(f1_score) = 0.92          # never reached
   -> proof_value = difficulty x 0.92 x novelty x verification x independence x utility
 ```
 
-The system hands the caller a quality score, then accepts that score back as one of six factors behind a 0.3 mint threshold. No forgery is required: **the API is the source of the credential it later honours.** `I-45` detects precisely this shape — a field the API emits may never be a field the API trusts.
+`handle_veilsim_run` has the identical shape: `f1_score`/`energy_drift`/
+`robustness` are assigned inside its `try` and read after it, so that route fails
+the same way.
+
+**Why this survived review:** no test invokes the handler. `grep -rn 'handle_run'
+test/` returns nothing, in a suite of 1,124 tests. A total breakage of the mint
+surface was carried in this document as a working loop because nothing ever
+called it and nobody executed the claim. `I-49` now gates on exactly that
+absence.
 
 #### Inconsistent failure direction
 
@@ -636,6 +671,7 @@ Guards: per-epoch clamp `±0.002` (reuse `decay_clamp_per_epoch`), TWAP over the
 | I-46 | a defaulted measurement fails closed |
 | I-47 | every root the gate reads is present — an unmeasured root is not compliance |
 | I-48 | a timed-out grep is not a clean grep |
+| I-49 | every HTTP handler is exercised by a test that invokes it |
 
 ## 11. Constants deltas
 

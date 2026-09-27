@@ -513,7 +513,8 @@ check(
     "I-13",
     "ASE has exactly one authorized issuance path (the clock); no alternate route",
     not rogue and not unknown,
-    "unauthorized issuance sites present:\n" + "\n".join(f"{f}:{s}" for f, s in sorted(rogue)),
+    ("unauthorized issuance sites present:\n" + "\n".join(f"{f}:{s}" for f, s in sorted(rogue)))
+    if rogue else "all registered issuance sites authorized; no rogue sites found",
     "route all issuance through the clock; remove IMPACT/ASE_MINT/staking-reward mints",
 )
 

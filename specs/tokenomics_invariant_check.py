@@ -160,14 +160,24 @@ check(
 
 # ── I-5  Exactly one canonical pool split exists ────────────────────────────
 canonical = grep(r"VeilSimPool|POOL_WEIGHTS", OSOVM / "src")
-legacy = grep(r"DISTRIBUTION_RATIOS|treasury\s*=>\s*0\.50", OSOVM / "src")
+# Match the legacy split only where it is USED -- a definition or an indexed
+# read -- not the bare name. grep() does not strip comments, so matching the
+# name alone flagged the tombstone comment the I-5 deletion left behind
+# ("# DISTRIBUTION_RATIOS deleted (I-5 / 2026-09-27)"), i.e. the check failed on
+# prose describing the fix. Negative invariants measure text, not behaviour
+# (spec 3.4b); this narrows I-5 to text that could actually split a pool.
+legacy = grep(
+    r"const\s+DISTRIBUTION_RATIOS\s*=|DISTRIBUTION_RATIOS\s*\[|treasury\s*=>\s*0\.50",
+    OSOVM / "src",
+)
 check(
     "I-5",
     "Exactly one canonical emission split in the codebase",
     not (canonical and legacy),
     f"canonical 8-pool sites: {len(canonical)} | legacy 5-wallet sites: {len(legacy)}\n"
     + "\n".join(legacy[:3]),
-    "delete one of the two splits; port the 8 pools into ase_minting.jl or delete it",
+    "delete the legacy split; emission routes through POOL_WEIGHTS in abci_endblock.jl "
+    "(50/25/15/10 belongs only to 24-sector tithe inflow, never to a mint)",
 )
 
 # ── I-6  The drift check actually covers every implementation ───────────────

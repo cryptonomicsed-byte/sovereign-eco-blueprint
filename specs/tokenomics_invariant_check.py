@@ -15,6 +15,7 @@ Run:  python3 specs/tokenomics_invariant_check.py
 """
 
 import collections
+import fnmatch
 import os
 import re
 import subprocess
@@ -78,28 +79,43 @@ def strip_jl_comments(text: str) -> str:
 
 
 def grep(pattern: str, *roots: Path, glob: str = "", fixed: bool = False) -> list[str]:
-    """Return 'path:line: text' matches, skipping build/vcs noise."""
+    """Return 'path:lineno:text' matches, skipping build/vcs noise.
+
+    Julia (.jl) files are comment-stripped before matching (stripping # from .rs
+    would delete #[derive] annotations; no other file type has the tombstone
+    problem). The original line is always returned as evidence so diffs are
+    readable; only the match decision uses the stripped version.
+    """
+    _SKIP_DIRS = {".git", "target", "node_modules"}
+    try:
+        rx = re.compile(re.escape(pattern) if fixed else pattern)
+    except re.error:
+        return []
+
     hits: list[str] = []
     for root in roots:
         if not root.exists():
             bucket = "declared_absent" if any(a in str(root) for a in ALLOW_ABSENT) else "missing_root"
             UNMEASURED[bucket].add(str(root))
             continue
-        cmd = ["grep", "-rn"]
-        if fixed:
-            cmd.append("-F")
-        cmd += ["-E", pattern, str(root)]
-        if glob:
-            cmd += ["--include", glob]
-        cmd += ["--exclude-dir=.git", "--exclude-dir=target", "--exclude-dir=node_modules"]
-        try:
-            out = subprocess.run(cmd, capture_output=True, text=True, timeout=60).stdout
-        except subprocess.TimeoutExpired:
-            UNMEASURED["timeout"].add(str(root))
-            continue
-        for ln in out.splitlines():
-            if ln.strip():
-                hits.append(ln.replace(str(HOME) + "/", ""))
+        files = [root] if root.is_file() else sorted(p for p in root.rglob("*") if p.is_file())
+        for fpath in files:
+            if any(d in fpath.parts for d in _SKIP_DIRS):
+                continue
+            if glob and not fnmatch.fnmatch(fpath.name, glob):
+                continue
+            try:
+                raw = fpath.read_text(errors="ignore")
+            except OSError:
+                continue
+            raw_lines = raw.splitlines()
+            if fpath.suffix == ".jl":
+                match_lines = strip_jl_comments(raw).splitlines()
+            else:
+                match_lines = raw_lines
+            for lineno, (mline, rline) in enumerate(zip(match_lines, raw_lines), 1):
+                if rx.search(mline):
+                    hits.append(f"{fpath}:{lineno}:{rline}".replace(str(HOME) + "/", ""))
     return hits
 
 

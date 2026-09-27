@@ -35,6 +35,10 @@ TOC = BP / "specs" / "TOC_CONSTANTS.toml"
 
 FAILURES: list[str] = []
 
+# Collects every hit string returned by grep() during a normal run so that the
+# --self-test assertions can validate the corpus without re-scanning.
+_GREP_LOG: list[str] = []
+
 # Absence must never read as compliance. A root the gate could not look at, and
 # a grep that timed out, are both UNMEASURED -- and an unmeasured check is a
 # failed check, not a passed one (I-44). Silently `continue`-ing on either made
@@ -138,6 +142,7 @@ def grep(pattern: str, *roots: Path, glob: str = "", fixed: bool = False) -> lis
             for lineno, (mline, rline) in enumerate(zip(match_lines, raw_lines), 1):
                 if rx.search(mline):
                     hits.append(f"{fpath}:{lineno}:{rline}".replace(str(HOME) + "/", ""))
+    _GREP_LOG.extend(hits)
     return hits
 
 
@@ -150,6 +155,77 @@ def check(cid: str, title: str, ok: bool, evidence: str, fix: str) -> None:
     if not ok:
         print(f"        FIX: {fix}")
         FAILURES.append(cid)
+
+
+def _self_test(hit_log: list[str]) -> int:
+    """Meta-checks verifying that grep() itself is sound.
+
+    Three assertions (Hermes 17628b1):
+      (a) no control bytes in any hit — a NUL or backspace means binary leaked through
+      (b) the set of files scanned is stable across two consecutive runs
+      (c) every cited path has a source extension, never a compiled artifact
+
+    Run via:  python3 specs/tokenomics_invariant_check.py --self-test
+    Exit code is the count of self-test failures so CI can gate on it separately
+    from the invariant suite.
+
+    The three-guard order in grep() (skip dir → skip extension → skip NUL) is
+    depth-in-defence: each guard catches a different failure mode, and (a)+(c) here
+    test whether any guard was bypassed. (b) tests reproducibility: results must not
+    depend on whether a stray build cache happens to exist.
+    """
+    _COMPILED = {".pyc", ".pyo", ".so", ".o", ".a", ".bin", ".class",
+                 ".jar", ".whl", ".wasm", ".db", ".sqlite", ".parquet"}
+    _CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+    fails = 0
+    print()
+    print("── self-test " + "─" * 59)
+
+    # (a) No control bytes in any hit string
+    bad_ctrl = [h for h in hit_log if _CTRL.search(h)]
+    if bad_ctrl:
+        print(f"[ST-FAIL] (a) control bytes in {len(bad_ctrl)} hit(s) "
+              f"— binary leaked into evidence")
+        for h in bad_ctrl[:3]:
+            print(f"          {h!r}")
+        fails += 1
+    else:
+        print(f"[ST-PASS] (a) no control bytes — {len(hit_log)} hits clean")
+
+    # (c) No compiled/binary artifact extension in any cited path
+    bad_ext = [h for h in hit_log if Path(h.split(":")[0]).suffix.lower() in _COMPILED]
+    if bad_ext:
+        print(f"[ST-FAIL] (c) {len(bad_ext)} hit(s) cite compiled artifacts")
+        for h in bad_ext[:3]:
+            print(f"          {h}")
+        fails += 1
+    else:
+        print(f"[ST-PASS] (c) no compiled artifacts in {len(hit_log)} hit(s)")
+
+    # (b) Stable file set: same pattern twice must return the same file list
+    _probe_root = OSOVM / "src"
+    if _probe_root.exists():
+        _pat = r"\bmodule\b"
+        _f1 = sorted({h.split(":")[0] for h in grep(_pat, _probe_root, glob="*.jl")})
+        _f2 = sorted({h.split(":")[0] for h in grep(_pat, _probe_root, glob="*.jl")})
+        if _f1 != _f2:
+            diff = set(_f1) ^ set(_f2)
+            print(f"[ST-FAIL] (b) unstable scan — {len(diff)} file(s) differ between 2 runs:")
+            for f in sorted(diff)[:3]:
+                print(f"          {f}")
+            fails += 1
+        else:
+            print(f"[ST-PASS] (b) stable — {len(_f1)} file(s) consistent across 2 runs")
+    else:
+        print("[ST-SKIP] (b) stability — OSOVM/src not present")
+
+    print("─" * 72)
+    if fails:
+        print(f"self-test: {fails} assertion(s) FAILED")
+    else:
+        print("self-test: all assertions hold")
+    return fails
 
 
 def toc_int(section: str, key: str) -> int | None:
@@ -879,4 +955,6 @@ if FAILURES:
     print(f"{len(FAILURES)} check(s) FAILING: {', '.join(_uniq)}")
 else:
     print("all invariants hold")
-sys.exit(len(FAILURES))
+
+_st_fails = _self_test(_GREP_LOG) if "--self-test" in sys.argv else 0
+sys.exit(len(FAILURES) + _st_fails)

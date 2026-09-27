@@ -86,7 +86,22 @@ def grep(pattern: str, *roots: Path, glob: str = "", fixed: bool = False) -> lis
     problem). The original line is always returned as evidence so diffs are
     readable; only the match decision uses the stripped version.
     """
-    _SKIP_DIRS = {".git", "target", "node_modules"}
+    # __pycache__ and friends hold COMPILED artifacts. The rglob() walk below
+    # visits every file, so without these the gate reads .pyc bytecode and
+    # returns its raw bytes as evidence -- which put NUL bytes in the report and
+    # made results depend on whether a stray build cache happened to exist.
+    # Measured: before this list, I-4 cited __pycache__/main.cpython-313.pyc.
+    _SKIP_DIRS = {
+        ".git", "target", "node_modules", "__pycache__",
+        ".pytest_cache", ".mypy_cache", ".ruff_cache",
+        "build", "dist", ".venv", "venv", ".tox",
+    }
+    # Belt and braces: never read anything that looks compiled or packed.
+    _BINARY_SUFFIXES = {
+        ".pyc", ".pyo", ".so", ".o", ".a", ".bin", ".class", ".jar", ".whl",
+        ".zip", ".gz", ".tar", ".lock", ".png", ".jpg", ".jpeg", ".gif", ".ico",
+        ".pdf", ".woff", ".woff2", ".ttf", ".wasm", ".db", ".sqlite", ".parquet",
+    }
     try:
         rx = re.compile(re.escape(pattern) if fixed else pattern)
     except re.error:
@@ -102,11 +117,18 @@ def grep(pattern: str, *roots: Path, glob: str = "", fixed: bool = False) -> lis
         for fpath in files:
             if any(d in fpath.parts for d in _SKIP_DIRS):
                 continue
+            if fpath.suffix.lower() in _BINARY_SUFFIXES:
+                continue
             if glob and not fnmatch.fnmatch(fpath.name, glob):
                 continue
             try:
                 raw = fpath.read_text(errors="ignore")
             except OSError:
+                continue
+            # Definitive guard: a NUL byte means this is not source. Skipping it
+            # here is what keeps binary out of the evidence regardless of which
+            # cache directory or extension it arrives under.
+            if "\x00" in raw:
                 continue
             raw_lines = raw.splitlines()
             if fpath.suffix == ".jl":

@@ -20,6 +20,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 # Repo roots. The defaults reproduce the original single-developer $HOME layout;
@@ -160,19 +161,23 @@ def check(cid: str, title: str, ok: bool, evidence: str, fix: str) -> None:
 def _self_test(hit_log: list[str]) -> int:
     """Meta-checks verifying that grep() itself is sound.
 
-    Three assertions (Hermes 17628b1):
+    Three assertions:
       (a) no control bytes in any hit — a NUL or backspace means binary leaked through
-      (b) the set of files scanned is stable across two consecutive runs
+      (b) cache-independence — a .pyc planted inside a scanned root must not appear
+          in output; the source file in the same root must still be found
       (c) every cited path has a source extension, never a compiled artifact
+
+    (b) uses a synthetic fixture rather than running the same walk twice.
+    Two consecutive walks over the same tree always agree (rglob is deterministic),
+    so that design only tests walk determinism, not cache-independence. The
+    simulation confirms this: with guards disabled and NUL bytes in output, (b) as
+    originally written still reported ST-PASS while (a) and (c) fired. The fixture
+    approach is falsifiable: disable the _SKIP_DIRS / _BINARY_SUFFIXES / NUL guards
+    in grep() and (b) fails.
 
     Run via:  python3 specs/tokenomics_invariant_check.py --self-test
     Exit code is the count of self-test failures so CI can gate on it separately
     from the invariant suite.
-
-    The three-guard order in grep() (skip dir → skip extension → skip NUL) is
-    depth-in-defence: each guard catches a different failure mode, and (a)+(c) here
-    test whether any guard was bypassed. (b) tests reproducibility: results must not
-    depend on whether a stray build cache happens to exist.
     """
     _COMPILED = {".pyc", ".pyo", ".so", ".o", ".a", ".bin", ".class",
                  ".jar", ".whl", ".wasm", ".db", ".sqlite", ".parquet"}
@@ -203,22 +208,32 @@ def _self_test(hit_log: list[str]) -> int:
     else:
         print(f"[ST-PASS] (c) no compiled artifacts in {len(hit_log)} hit(s)")
 
-    # (b) Stable file set: same pattern twice must return the same file list
-    _probe_root = OSOVM / "src"
-    if _probe_root.exists():
-        _pat = r"\bmodule\b"
-        _f1 = sorted({h.split(":")[0] for h in grep(_pat, _probe_root, glob="*.jl")})
-        _f2 = sorted({h.split(":")[0] for h in grep(_pat, _probe_root, glob="*.jl")})
-        if _f1 != _f2:
-            diff = set(_f1) ^ set(_f2)
-            print(f"[ST-FAIL] (b) unstable scan — {len(diff)} file(s) differ between 2 runs:")
-            for f in sorted(diff)[:3]:
-                print(f"          {f}")
+    # (b) Cache-independence: a .pyc planted in a scanned root must not appear
+    with tempfile.TemporaryDirectory() as _td:
+        _troot = Path(_td)
+        # Source file: contains the probe pattern and should be found
+        (_troot / "probe.jl").write_text("module Probe\nend\n")
+        # Compiled artifact: same text + NUL bytes, inside a __pycache__ dir
+        _pycache = _troot / "__pycache__"
+        _pycache.mkdir()
+        (_pycache / "probe.cpython-313.pyc").write_bytes(
+            b"\x00\x00module Probe\x00end\x00"
+        )
+        _hits_b = grep(r"\bmodule\b", _troot)
+        _files_b = {h.split(":")[0] for h in _hits_b}
+        _has_source = any("probe.jl" in f for f in _files_b)
+        _has_compiled = any("probe.cpython-313.pyc" in f for f in _files_b)
+        if _has_compiled:
+            print("[ST-FAIL] (b) .pyc artifact appeared in scan — at least one guard is bypassed")
+            for h in _hits_b:
+                if ".pyc" in h:
+                    print(f"          {h}")
+            fails += 1
+        elif not _has_source:
+            print("[ST-FAIL] (b) source file not found — guard is too aggressive")
             fails += 1
         else:
-            print(f"[ST-PASS] (b) stable — {len(_f1)} file(s) consistent across 2 runs")
-    else:
-        print("[ST-SKIP] (b) stability — OSOVM/src not present")
+            print(f"[ST-PASS] (b) cache-independent — .pyc filtered, source found")
 
     print("─" * 72)
     if fails:

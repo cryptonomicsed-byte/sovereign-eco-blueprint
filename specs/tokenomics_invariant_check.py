@@ -56,6 +56,27 @@ ALLOW_ABSENT: tuple[str, ...] = tuple(
 )
 
 
+def strip_jl_comments(text: str) -> str:
+    """Drop Julia `#` comments before counting identifiers.
+
+    A `#` only starts a comment when it is not inside a string literal, which is
+    approximated by requiring an even number of quotes before it. Needed because
+    this project tombstones deleted code with a comment naming the functions --
+    so an identifier census that reads comments counts the tombstone as a
+    reference and reports a live dead function as reachable.
+    """
+    out = []
+    for line in text.splitlines():
+        i = line.find("#")
+        while i != -1:
+            if line[:i].count('"') % 2 == 0:
+                line = line[:i]
+                break
+            i = line.find("#", i + 1)
+        out.append(line)
+    return "\n".join(out)
+
+
 def grep(pattern: str, *roots: Path, glob: str = "", fixed: bool = False) -> list[str]:
     """Return 'path:line: text' matches, skipping build/vcs noise."""
     hits: list[str] = []
@@ -737,6 +758,11 @@ check(
 # 24 of 625 functions including demo helpers (doThing, stopIt) and print
 # utilities, which would make the check noise and train people to ignore it.
 # Scoring vocabulary narrows it to the class that has actually bitten.
+#
+# Comments are stripped before counting. Verified necessary: with tombstones
+# naming deleted functions, an unstripped census counted the tombstone as a
+# reference, so re-adding a live dead difficulty_factor reported PASS. A check
+# blinded by the comment describing the very thing it guards is not a check.
 _SCORING_VOCAB = re.compile(
     r"score|difficulty|quality|novelty|verification|independence|utility|emission|reward",
     re.IGNORECASE,
@@ -748,7 +774,7 @@ for _root in (OSOVM / "src", OSOVM / "test", KODA2, VANTAGE):
     for _p in _root.rglob("*.jl"):
         if _p.is_file() and "julia-1.10" not in str(_p):
             try:
-                _bodies.append(_p.read_text(errors="ignore"))
+                _bodies.append(strip_jl_comments(_p.read_text(errors="ignore")))
             except OSError:
                 pass
 _blob = "\n".join(_bodies)

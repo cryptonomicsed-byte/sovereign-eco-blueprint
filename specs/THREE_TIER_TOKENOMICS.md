@@ -75,22 +75,24 @@ cumulative >= claimed_gpu_seconds
 
 and `op_gpu_contribution` only checks `isnothing(anchor) || anchor == ""`.
 
-So the anchor is validated for **non-emptiness, not authenticity**. `zangbeto_anchor: "x"` satisfies the entire verified-work gate. Combined with the amount override at site 8, the complete bypass is two calls:
+So the anchor is validated for **non-emptiness, not authenticity**: `zangbeto_anchor: "x"` satisfies the entire verified-work gate.
 
-```
-1. POST /run {opcode:"GPU_CONTRIBUTION", args:{agent_id:"A", provider_id:"P",
-                gpu_seconds:1, zangbeto_anchor:"x"}}
-   → records toc_contributions["A"] = 1, emits GpuContribution with anchor "x"
+> **CORRECTION — an earlier revision of this section described a two-call bypass. It does not work, and the reason is worse than the bug it described.**
+>
+> `handle_run` builds a **fresh VM for every request** (`vm = OsoVM.create_vm()`, `server.jl:169`; the comment reads "Execute on fresh VM (stateless per request)"). State does not carry between calls, so the `GpuContribution` event written by call 1 is discarded along with call 1's VM, `toc_contributions` is empty in call 2, and `cumulative >= claimed_gpu_seconds` is false. **The gated path is not merely unsatisfied — it is unreachable over HTTP, because it requires state the server cannot hold across requests.**
+>
+> That is the sharper finding, and it inverts the difficulty: statelessness kills exactly the path that has a gate, and leaves untouched the paths that need no prior state. The corrected bypass is **one unauthenticated request**, not two:
+>
+> ```
+> POST /run {"opcode":"IMPACT","args":{"ase":1000000},"agent":"any-name-i-choose"}
+>   -> resolve_opcode("IMPACT") -> CORE_OPCODES[:IMPACT] = 0x11
+>   -> vm.current_sender = <the caller's chosen string>
+>   -> FFI.impact_mint(ase_amount, vm):  vm.ase_balance[sender] += ase_amount   (no gate)
+> ```
+>
+> My earlier description understated the exposure. See §3.4.
 
-2. POST /run {opcode:"TOC_MINT", args:{agent_id:"A", gpu_seconds:1,
-                zangbeto_anchor:"x", synapse_estimate:999999999}}
-   → toc_is_fully_verified passes (1 >= 1, anchor non-empty)
-   → minted_synapse = 999,999,999   (caller override wins)
-```
-
-Result: ~1,000,000 GPU-hours of Synapse claimed from one GPU-second and a one-character anchor. The F1 gate, the witness rules and the TEE attestation are all downstream of a check that never actually happened.
-
-Independently: in the Rust client path the anchor is **never set** (`bridge/arp.rs:109 zangbeto_anchor: None`; Zàngbétò is not connected in prod), so the authorized path cannot fire either. **The gated path is simultaneously unreachable from inside the ecosystem and forgeable from outside it.** That is the whole security story of the mint authority.
+Independently: in the Rust client path the anchor is **never set** (`bridge/arp.rs:109 zangbeto_anchor: None`; Zàngbétò is not connected in prod), so the authorized path cannot fire either. **The gated path is simultaneously unreachable from inside the ecosystem and unusable from outside it — while the ungated paths work for anyone, first try, with no setup.** That is the whole security story of the mint authority.
 
 ### 3.3 Evidence, not authority — and never authority by inheritance
 

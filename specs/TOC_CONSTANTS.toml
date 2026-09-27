@@ -52,6 +52,9 @@ dop_per_gpu_hour      = 1000.0          # DOPAMINE units per GPU-hour — must e
 # dop_per_gpu_second is DELETED — derived value (= dop_per_gpu_hour / 3600).
 # Compute in code: gpu_hours = gpu_seconds / 3600.0 (see oso_vm.jl:2457)
 idle_decay_rate       = 0.01            # 1%/day idle decay on Guild Dopamine pool
+# Aliases required by constants.jl (canonical names differ from earlier design):
+birth_endowment       = 86_000_000_000  # alias for genesis_seed — required by constants.jl loader
+daily_decay_rate      = 0.01            # alias for idle_decay_rate — required by constants.jl loader
 
 [synapse]
 # Per-agent compute slice — SHARE of Dopamine pool, not absolute.
@@ -67,6 +70,9 @@ base_cost_ase         = 1.0             # 1 ASE = 1000 SYN (base cost before sca
 saturation_count      = 100.0           # nonlinear scarcity knee: 100 agents → cost doubles
 credit_to_alloc_ratio = 1.0             # default SynapseCredit → SynapseAllocation conversion
 allocation_expiry_secs = 28800.0        # 8 hours: unused allocation expires (no refund)
+# Aliases required by constants.jl:
+birth_endowment       = 86_000_000      # per-agent Synapse birth endowment — required by constants.jl loader
+daily_decay_rate      = 0.01            # 1%/day decay (mirrors Dopamine idle) — required by constants.jl loader
 
 [esu]
 # Èṣù tithe — 3.69% on value-job settlements
@@ -109,6 +115,7 @@ creator_share         = 0.10            # 10% to job creator (Sabbath-vested 7 d
 burn_share            = 0.05            # 5% permanently burned (protocol)
 agent_ase_treasury    = 0.30            # 30% retained as spendable Àṣẹ (drone upgrades, Walrus, relays)
 agent_dopamine        = 0.55            # 55% burned → Dopamine signal (compute capacity)
+agent_share           = 0.85            # agent_ase_treasury (0.30) + agent_dopamine (0.55) — required by constants.jl loader
 # Note: agent_ase_treasury + agent_dopamine = 0.85 (the agent's 85% share)
 # Decision 2026-09-15: agents need spendable currency for external costs.
 # Prior: 85% all burned to Dopamine; agents had no way to pay external vendors.

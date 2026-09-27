@@ -63,14 +63,19 @@ ALLOW_ABSENT: tuple[str, ...] = tuple(
 
 
 def strip_jl_comments(text: str) -> str:
-    """Drop Julia `#` comments before counting identifiers.
+    """Drop Julia `#` line comments AND triple-quoted docstrings before matching.
 
-    A `#` only starts a comment when it is not inside a string literal, which is
-    approximated by requiring an even number of quotes before it. Needed because
-    this project tombstones deleted code with a comment naming the functions --
-    so an identifier census that reads comments counts the tombstone as a
-    reference and reports a live dead function as reachable.
+    Two passes:
+    1. Remove all triple-quoted string literals (\"\"\"...\"\"\"): docstrings name
+       deleted symbols and cause false invariant passes when prose contains the
+       identifier being checked (e.g. 'anchor_verified', 'compute_score').
+    2. Remove `#`-to-EOL comments, guarded by an even-quote count so that a `#`
+       inside a single-quoted string is not treated as a comment start.
     """
+    import re
+    # Pass 1: strip triple-quoted literals (non-greedy, DOTALL)
+    text = re.sub(r'""".*?"""', '""""""', text, flags=re.DOTALL)
+    # Pass 2: strip # comments (not inside single-quoted strings)
     out = []
     for line in text.splitlines():
         i = line.find("#")

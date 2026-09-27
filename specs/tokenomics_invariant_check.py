@@ -490,8 +490,15 @@ check(
 # never from a request argument, and never default to a favourable value.
 
 # I-19  no scoring dimension is read from a request argument
+# Scoped to SCORING DIMENSIONS only. Earlier this also matched :receipt_hash and
+# :environment_hash, which are not dimensions: receipt_hash is the identifier the
+# fix text itself prescribes ("receipts referenced by id"), and environment_hash
+# is a label for the novelty lookup. Matching them made I-19 report four
+# violations where two are real, which is the same conflation of id/label with
+# value that this invariant exists to prevent.
 hits = grep(r"get\(args, :f1_score|get\(args, :gpu_seconds|get\(args, :difficulty|"
-            r"get\(args, :receipt_hash|get\(args, :environment_hash",
+            r"get\(args, :quality|get\(args, :verification|get\(args, :independence|"
+            r"get\(args, :novelty|get\(args, :utility",
             OSOVM / "src" / "oso_vm.jl", OSOVM / "src" / "vm_core.jl")
 check(
     "I-19",

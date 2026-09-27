@@ -1,0 +1,139 @@
+name: constitution
+
+# Runs the two checks that guard the Three-Tier Economic Constitution:
+#
+#   1. specs/toc_drift_check.py            — do constants and code agree?
+#   2. specs/tokenomics_invariant_check.py — do the invariants hold?
+#
+# WHY THIS EXISTS
+# ---------------
+# Both scripts already existed; neither ran anywhere. The blueprint repo had no
+# workflows at all, no git hooks, and toc_drift_check.py resolves its roots from
+# `Path(__file__).parent.parent.parent`, so it can only work in a layout holding
+# all five repos side by side. A check that runs when someone remembers is an
+# audit, not a control — the same gap that let server.jl:181 carry a fabricated
+# score, and the same gap that made a drift-check failure get reported as a CI
+# failure before any CI existed to produce one.
+#
+# WHAT IS GATED
+# -------------
+# The drift check is a HARD GATE, deliberately. It is currently RED for two
+# known reasons, both of which should block Decisions 7-9 code:
+#   - 1000.0 duplicated: synapse.per_gpu_hour vs dopamine.dop_per_gpu_hour.
+#     §3.3 (pool_G += s_a x f x CONTRIBUTION_FACTOR) presupposes a shared
+#     GPU-hour denomination. Needs either an enforced-equality assertion or a
+#     split. Red until that is signed off.
+#   - ase_minting.jl still carries the legacy 5-pool DISTRIBUTION_RATIOS.
+# A red gate here is the correct signal, not noise: the constitution is
+# internally inconsistent and code must not be written against it.
+#
+# The invariant COUNT is reported but not gated, for the reason recorded in
+# OSOVM's invariants.yml — negative greps are satisfied by an empty tree, so the
+# count rewards a less-verified repo.
+
+on:
+  push:
+    paths:
+      - 'specs/**'
+      - '.github/workflows/constitution.yml'
+  pull_request:
+    paths:
+      - 'specs/**'
+  workflow_dispatch:
+
+jobs:
+  constitution:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sovereign-eco-blueprint (the constitution)
+        uses: actions/checkout@v4
+        with:
+          path: roots/sovereign-eco-blueprint
+
+      - name: Checkout OSOVM (roots 1,2,3 the checks read)
+        uses: actions/checkout@v4
+        with:
+          repository: cryptonomicsed-byte/OSOVM
+          path: roots/OSOVM
+
+      - name: Checkout omokoda-agent (formerly Omo-Koda2)
+        uses: actions/checkout@v4
+        with:
+          repository: cryptonomicsed-byte/omokoda-agent
+          path: roots/Omo-Koda2
+
+      - name: Checkout Vantage (ase_emission.py pool weights)
+        uses: actions/checkout@v4
+        with:
+          repository: cryptonomicsed-byte/Vantage
+          path: roots/Vantage
+
+      - name: Checkout AIO
+        uses: actions/checkout@v4
+        with:
+          repository: cryptonomicsed-byte/AIO
+          path: roots/AIO
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Constant drift check (HARD GATE)
+        id: drift
+        run: |
+          set +e
+          python3 roots/sovereign-eco-blueprint/specs/toc_drift_check.py | tee drift.log
+          code=${PIPESTATUS[0]}
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Constant drift check"
+            echo ""
+            echo '```'
+            cat drift.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+
+      - name: Invariant gate (report)
+        id: invariants
+        env:
+          ECO_HOME: ${{ github.workspace }}/roots
+          # technosis/aio mirrors the retired Bino-Elgua/AIO account and is not
+          # reproducible here. Declaring it absent makes the gate print
+          # [SKIP] not-measured rather than counting it as a pass.
+          ECO_ALLOW_ABSENT: technosis/aio
+        run: |
+          set +e
+          python3 roots/sovereign-eco-blueprint/specs/tokenomics_invariant_check.py | tee invariants.log
+          failing=${PIPESTATUS[0]}
+          unmeasured=$(grep -cE '^\[FAIL\] +I-4[78]' invariants.log || true)
+          echo "unmeasured=${unmeasured:-0}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Invariant gate"
+            echo ""
+            echo "| metric | value | gated |"
+            echo "| --- | --- | --- |"
+            echo "| unmeasured roots (I-47/I-48) | ${unmeasured:-0} | **yes** |"
+            echo "| failing invariants | $failing | no -- see OSOVM/invariants.yml |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+
+      - name: Fail on unmeasured input (I-47/I-48)
+        run: |
+          set -euo pipefail
+          if grep -qE '^\[FAIL\] +I-4[78]' invariants.log; then
+            echo "::error::I-47/I-48: the gate could not fully look at the tree. Everything it failed to see is UNVERIFIED, not fine."
+            grep -E '^\[FAIL\] +I-4[78]' invariants.log
+            exit 1
+          fi
+          echo "I-47/I-48 clean."
+
+      - name: Fail on constant drift
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.drift.outputs.code }}" != "0" ]; then
+            echo "::error::Constant drift detected. The constitution and the code disagree; fix before writing Decisions 7-9 code."
+            cat drift.log
+            exit 1
+          fi
+          echo "No constant drift."

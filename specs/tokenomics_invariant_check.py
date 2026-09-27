@@ -242,7 +242,8 @@ check(
     "The value 1440 is not overloaded across unrelated meanings",
     len(values_1440) <= 1,
     f"lines where 1440 is an assigned value: {len(values_1440)}\n" + "\n".join(values_1440),
-    "rename: daily emission total vs inheritance seat count must not share a literal",
+    "derive the cap (emission_per_minute x 60 x emission_window_hours) so 1440 means only "
+    "the seat count; renaming alone leaves two literals and does not close this check",
 )
 
 # ── I-12  No opcode may accept a caller-supplied issuance amount ───────────

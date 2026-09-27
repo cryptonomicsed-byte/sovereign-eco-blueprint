@@ -98,7 +98,7 @@ def check_key_constants(toml: dict) -> list[str]:
 
     checks = [
         ("ase.emission_per_minute", 1.0, "emission 1 ASE/min"),
-        ("ase.max_daily_emission", 1440.0, "1440 ASE/day"),
+        ("ase.emission_window_hours", 24.0, "daily cap window; max_daily_emission is derived"),
         ("dopamine.ase_to_dopamine", 10000.0, "1:10,000 burn ratio"),
         ("dopamine.decay_min", 0.001, "min decay 0.1%/day"),
         ("dopamine.decay_max", 0.020, "max decay 2.0%/day"),

@@ -228,10 +228,28 @@ score while the negative invariants lack a declared denominator. Wiring CI to a
 number that rewards an emptier tree would reproduce this defect in the last place
 left to notice it.
 
-Two follow-ups this exposed: the gate reads `~/technosis/aio` — a mirror of the
-**retired** `Bino-Elgua/AIO` account — so it inspects the same project twice,
-once from a tree that cannot be reproduced; and `toc_int()` returns `None` when
-`TOC_CONSTANTS.toml` is absent, a third silent-degrade path of the same family.
+**The family is larger than the gate.** Every member below turns "I could not
+measure this" into a pass, and each was verified by reading the branch, not by
+inference:
+
+| Site | Shape | Status |
+|---|---|---|
+| `tokenomics_invariant_check.grep()` | missing root ⇒ `continue` ⇒ counted as passing | fixed (I-47) |
+| `tokenomics_invariant_check.grep()` | grep timeout ⇒ `continue` ⇒ "no hits" | fixed (I-48) |
+| `toc_constants.rs` drift test | `TocConstants::load()` error ⇒ `return` ⇒ **test reports ok** | fixed — see below |
+| `tokenomics_invariant_check.toc_int()` | absent `TOC_CONSTANTS.toml` ⇒ `None` ⇒ comparisons degrade | open |
+| `server.jl:247` | omitted `f1` ⇒ `0.88` ⇒ clears the 0.777 gate | open (I-46) |
+
+The drift test was the worst of them, because it guards the single source of
+truth itself. Established by **negative control**: deleting `emission_window_hours`
+from `TOC_CONSTANTS.toml` left `rust_constants_match_toml` reporting `ok`, with
+the TOML parse error printed as the *reason* it passed. A test that goes green
+when the source fails to parse cannot detect drift. Replaced with a `panic!`;
+re-verified both directions — broken TOML now FAILS, restored TOML passes.
+
+Also noted: the gate reads `~/technosis/aio`, a mirror of the **retired**
+`Bino-Elgua/AIO` account, so it inspects the same project twice, once from a tree
+that cannot be reproduced.
 
 ### 3.4 The HTTP surface — where every finding above becomes reachable
 
@@ -627,8 +645,8 @@ Guards: per-epoch clamp `±0.002` (reuse `decay_clamp_per_epoch`), TWAP over the
 | `synapse.ase_per_gpu_hour` | absent | **new**, governance-set | the on-ramp price (I-2) |
 | `synapse.per_gpu_hour` | `1000` | keep | the unit definition (I-9) |
 | `synapse.max_per_agent` | `86000000` | **derived**: `pool_hours × tier_weight / active_agent_count` | I-10 |
-| `ase.max_daily_emission` | `1440` | rename to `daily_emission_total_ase` | I-11 |
-| `inheritance.seat_count` | `1440` | rename to `inheritance_seat_count` | I-11 |
+| `ase.max_daily_emission` | `1440` | **remove the literal**, derive from `emission_per_minute × 60 × emission_window_hours` | I-11 |
+| `inheritance.seat_count` | `1440` | rename to `inheritance_seat_count` — now the one canonical 1440 | I-11 |
 | pools | 8-pool **and** 5-wallet | **one** | I-5 |
 | `compute_proof.verification_floor` | `0.5` hardcoded | **remove** (unverified ⇒ 0) | I-21 |
 | `compute_proof.independence` | `1.0` / `0.8` hardcoded | **computed** from witness chain | I-22 |
@@ -639,8 +657,8 @@ Guards: per-epoch clamp `±0.002` (reuse `decay_clamp_per_epoch`), TWAP over the
 
 `1440` currently means three different things, and two of them are easy to conflate:
 
-- `ase.max_daily_emission = 1440` — **ASE per day** (the clock)
-- `inheritance.seat_count = 1440` — **governance/human wallet seats**
+- `ase.max_daily_emission` — **derived** from `emission_per_minute × 60 × emission_window_hours` (the clock); not a literal
+- `inheritance.inheritance_seat_count = 1440` — **governance/human wallet seats**; the single canonical meaning of 1440
 - `genesis.koodu_blocks_per_day = 144` — Bitcoin blocks per day
 
 Rule: never write "1,440 emission" or "1,440 seats" without the noun. Rename the two constants (§11) so `grep 1440` stops lying. This is not cosmetic — an implementation agent six months from now will read one as the other.

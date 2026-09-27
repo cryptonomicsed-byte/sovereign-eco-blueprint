@@ -5,7 +5,10 @@
 
 [ase]
 emission_per_minute   = 1           # 1 ASE per minute (global clock)
-max_daily_emission    = 1440        # 60 min × 24 h
+emission_window_hours = 24          # the cap window == one daily clock cycle
+# max_daily_emission is DERIVED, not declared: emission_per_minute × 60 ×
+# emission_window_hours. It is deliberately NOT a literal in this file so that
+# 1440 appears in TOC_CONSTANTS exactly once -- the Inheritance seat count (I-11).
 birth_fee             = 10.0        # 10 ASE locked at birth → AGENT_BORN tx
 micro_per_ase         = 1_000_000   # 1 ASE = 1,000,000 mist (micro-units)
 
@@ -78,8 +81,8 @@ koodu_genesis_block   = 780_000         # BTC block height anchoring OSO epoch
 koodu_blocks_per_day  = 144             # Bitcoin blocks per day
 
 [inheritance]
-# 1440 Inheritance Wallet governance
-seat_count            = 1440
+# 1440 Inheritance Wallet governance -- the single canonical meaning of 1440
+inheritance_seat_count = 1440
 council_seats         = 12
 sector_count          = 24
 offering_share        = 0.25            # 25% of protocol revenue → 1440 vaults

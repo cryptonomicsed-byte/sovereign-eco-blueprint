@@ -495,11 +495,15 @@ check(
 ISSUANCE_SITES = {
     ("ase_emission.py", "ase_emission"): True,        # the one clock
     ("abci_endblock.jl", "POOL_WEIGHTS"): True,       # clock (L1, currently dead)
-    ("oso_vm.jl", "impact_mint"): False,
-    ("vm_core.jl", "op_impact"): False,
-    ("vm_core.jl", "op_ase_mint"): False,
-    ("oso_vm.jl", "accrued_rewards"): False,
-    ("world_tiles.jl", "total_ase_minted"): False,
+    # Authorized Synapse (ToC) issuance — GPU hours → Synapse tokens via watermark
+    ("oso_vm.jl",   "minted_synapse"): True,
+    ("vm_core.jl",  "minted_synapse"): True,          # test harness VM, same logic
+    # Removed issuance sites — kept in registry so they fail if resurrected
+    ("oso_vm.jl",   "impact_mint"):    False,
+    ("vm_core.jl",  "op_impact"):      False,
+    ("vm_core.jl",  "op_ase_mint"):    False,
+    ("oso_vm.jl",   "accrued_rewards"):False,
+    ("world_tiles.jl","total_ase_minted"):False,
 }
 found = {}
 for sym in [s for (_, s) in ISSUANCE_SITES]:

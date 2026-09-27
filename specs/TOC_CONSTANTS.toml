@@ -43,7 +43,8 @@ decay_ema_alpha       = 0.25            # smoothing — ~4 epochs (28 days) to c
 decay_clamp_per_epoch = 0.002           # max shift per 7-day cycle (prevents oscillation)
 # Three-Tier Economic Constitution additions (2026-09-26):
 synapse_to_dopamine_factor = 0.85       # Synapse → Guild Dopamine conversion (< 1.0 = collective efficiency tax)
-dop_per_gpu_second    = 0.2778          # 1000 DOP = 1 GPU-hour (derived: 1000 / 3600)
+dop_per_gpu_hour      = 1000.0          # DOPAMINE units per GPU-hour (distinct from synapse.per_gpu_hour which is SYN/GPU-hr)
+dop_per_gpu_second    = 0.2778          # = dop_per_gpu_hour / 3600 — pre-computed for per-second accounting
 idle_decay_rate       = 0.01            # 1%/day idle decay on Guild Dopamine pool
 
 [synapse]

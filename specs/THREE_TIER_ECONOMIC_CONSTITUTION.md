@@ -19,6 +19,8 @@ Before any formula, four axioms that all implementation must honour:
 
 4. **Sovereignty is absolute at every boundary.** An agent contributing Synapse to a Guild does not surrender its identity or its receipts. A Guild job produces a Guild receipt that references each contributing agent's receipt. No agent can be made liable for another agent's output.
 
+5. **Àṣẹ flows only to human-controlled wallets.** No agent address may be a direct recipient of Àṣẹ settlement. Agents earn Synapse Allocation (compute entitlement), not Àṣẹ balances. When an agent accrues economic value (birthright, settlement share, witness reward), that value is held in a human wallet designated at birth. This is the hard rule that prevents agent-to-agent Àṣẹ accumulation loops and preserves the civilization-fuel semantics of Layer 1.
+
 ---
 
 ## 1. The Three Layers
@@ -284,9 +286,9 @@ This 10% is taken BEFORE the standard 8-pool split. The remaining 90% flows thro
 
 ```
 total settlement = 100%
-  └─ birthright_ase = 10%  → birth_beneficiary_pubkey
+  └─ birthright_ase = 10%  → birth_beneficiary_pubkey (human wallet, never agent address)
   └─ pool_distribution = 90%
-       └─ VeilSimPool: 90% × 0.30 = 27% of total
+       └─ VeilSimPool: 90% × 0.20 = 18.0% of total  ← TOC_CONSTANTS.ase.pools.veilsim = 0.20
        └─ RndPool:     90% × 0.15 = 13.5% of total
        ...etc
 ```
@@ -312,6 +314,29 @@ struct AgentBirth has key {
 ```
 
 OSOVM reads `birth_beneficiary` from the agent's canonical ID during settlement.
+
+**Constraint (Axiom 5):** `birth_beneficiary` MUST be a human-controlled wallet address. An agent's own address is not valid. OSOVM rejects `ASE_SETTLE` where `birth_beneficiary` resolves to an agent identity rather than a human identity. The human who initiates the agent's birth transaction is the canonical birth beneficiary unless an explicit override is provided at birth time.
+
+### 4.6 Reconciliation with @shrineSplit (50/25/15/10)
+
+The `@shrineSplit` rule applies to **24-sector inflow** (civilization-layer revenues flowing through the Shrine → Inheritance → AIO → Burn path):
+
+- Shrine: 50%
+- Inheritance: 25%
+- AIO: 15%
+- Burn: 10%
+
+Birthright is applied **before** the 8-pool split and therefore before @shrineSplit. The relationship is:
+
+```
+qualifying human payment = 100%
+  → birthright = 10%           (§4.3 — taken first, flows to birth_beneficiary human wallet)
+  → remainder = 90%            (enters OSOVM constitutional accounting)
+       → 8-pool distribution   (VeilSimPool 20%, RndPool 15%, ...)
+            → @shrineSplit applies to the Shrine pool portion that enters 24-sector inflow
+```
+
+The two 10% values are **coincidentally equal but semantically distinct**: birthright 10% is a protocol assignment from gross payment; @shrineSplit Burn 10% is a destruction mechanism within the 24-sector accounting layer. They do not interact directly.
 
 ---
 

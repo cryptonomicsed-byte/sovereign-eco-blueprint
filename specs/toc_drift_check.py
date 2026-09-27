@@ -120,6 +120,85 @@ def check_key_constants(toml: dict) -> list[str]:
     return errors
 
 
+def parse_julia_pool_weights(path: Path) -> dict | None:
+    """Parse a Julia `const POOL_WEIGHTS = Dict{String, Float64}(...)` block."""
+    if not path.exists():
+        return None
+    text = path.read_text()
+    m = re.search(r'const POOL_WEIGHTS\s*=\s*Dict\{[^}]+\}\s*\((.*?)\)', text, re.DOTALL)
+    if not m:
+        return None
+    result = {}
+    for line in m.group(1).splitlines():
+        line = line.strip().rstrip(',')
+        km = re.match(r'"([^"]+)"\s*=>\s*([0-9.]+)', line)
+        if km:
+            result[km.group(1)] = float(km.group(2))
+    return result
+
+
+def parse_julia_distribution_ratios(path: Path) -> dict | None:
+    """Parse a Julia `const DISTRIBUTION_RATIOS = Dict(...)` block."""
+    if not path.exists():
+        return None
+    text = path.read_text()
+    m = re.search(r'const DISTRIBUTION_RATIOS\s*=\s*Dict\s*\((.*?)\)', text, re.DOTALL)
+    if not m:
+        return None
+    result = {}
+    for line in m.group(1).splitlines():
+        line = line.strip().rstrip(',')
+        km = re.match(r'"([^"]+)"\s*=>\s*([0-9.]+)', line)
+        if km:
+            result[km.group(1)] = float(km.group(2))
+    return result
+
+
+def check_julia_pool_drift(toml: dict) -> list[str]:
+    """I-6: verify OSOVM Julia files against the canonical TOC_CONSTANTS pool weights."""
+    errors = []
+    osovm_root = Path(os.environ.get("ECO_OSOVM_ROOT", str(ROOT / "OSOVM")))
+
+    # abci_endblock.jl — carries the 8-pool POOL_WEIGHTS used by the L1 clock.
+    abci = osovm_root / "src" / "abci_endblock.jl"
+    abci_pools = parse_julia_pool_weights(abci)
+    if abci_pools is None:
+        errors.append("abci_endblock.jl: POOL_WEIGHTS dict not found (I-6)")
+    else:
+        pool_map = {
+            "VeilSimPool":    "ase.pools.veilsim",
+            "RndPool":        "ase.pools.rnd",
+            "GovernancePool": "ase.pools.governance",
+            "ReservePool":    "ase.pools.reserve",
+            "ComputePool":    "ase.pools.compute",
+            "StoragePool":    "ase.pools.storage",
+            "WitnessPool":    "ase.pools.witness",
+            "TreasuryPool":   "ase.pools.treasury",
+        }
+        for jl_name, toml_key in pool_map.items():
+            expected = toml.get(toml_key)
+            actual = abci_pools.get(jl_name)
+            if expected is None:
+                errors.append(f"abci_endblock.jl I-6: {toml_key} missing from TOC_CONSTANTS")
+            elif actual is None:
+                errors.append(f"abci_endblock.jl I-6: pool '{jl_name}' missing from POOL_WEIGHTS")
+            elif abs(actual - expected) > 1e-9:
+                errors.append(f"abci_endblock.jl I-6 DRIFT: {jl_name}={actual} vs TOML={expected}")
+
+    # ase_minting.jl — carries an old 5-pool DISTRIBUTION_RATIOS (legacy split).
+    # This is a different schema than the canonical 8-pool set — flag as I-5 drift.
+    minting = osovm_root / "src" / "ase_minting.jl"
+    dist = parse_julia_distribution_ratios(minting)
+    if dist is not None:
+        errors.append(
+            f"ase_minting.jl I-5/I-6: DISTRIBUTION_RATIOS present with {len(dist)} pools "
+            f"(legacy 5-pool split — conflicts with canonical 8-pool abci_endblock.jl; "
+            f"delete DISTRIBUTION_RATIOS from ase_minting.jl and route through abci_endblock)"
+        )
+
+    return errors
+
+
 def main():
     toml_path = ROOT / "sovereign-eco-blueprint/specs/TOC_CONSTANTS.toml"
     if not toml_path.exists():
@@ -131,6 +210,7 @@ def main():
     errors = []
     errors.extend(check_pool_weights(toml))
     errors.extend(check_key_constants(toml))
+    errors.extend(check_julia_pool_drift(toml))
 
     if errors:
         print("TOC_CONSTANTS DRIFT DETECTED:", file=sys.stderr)

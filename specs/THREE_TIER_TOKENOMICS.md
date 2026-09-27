@@ -133,6 +133,57 @@ That table is why the ladder is correct — it is already a monotone ranking of 
 2. **Every score names its referent**, and the referent is withheld by a non-claimant (`I-36`).
 3. **A seal is integrity, not truth.** A seal may *bind* a referent; it may never *stand in* for one (`I-37`).
 
+### 3.4a The self-issued score — one name, four provenances, and a closed loop
+
+`f1_score` denotes **four different things** in this codebase. They share a name and a plausible range (0–1), so no consumer can tell them apart:
+
+| # | Provenance | Site | Character |
+|---|---|---|---|
+| 1 | **real measurement** | `veilsim_engine.jl:827,869` — `sim.metrics.f1_score = f1` from `compute_f1` | computed |
+| 2 | **pass-by-default constant** | `server.jl:247` — `get(veil_result, "f1", get(veil_result, :f1, 0.88))` | absent ⇒ 0.88, which **clears the 0.777 gate** |
+| 3 | **tautology over another field** | `server.jl:181` — `f1_score = ase_minted > 0.0 ? 0.92 : (status=="error" ? 0.0 : 0.88)` | restates `ase_minted` |
+| 4 | **caller argument** | `oso_vm.jl:2420` — `f1_score = Float64(get(args, :f1_score, 0.0))` → `quality` in `proof_value` | supplied |
+
+Three of the four are constants. Sample an `f1_score` at random in this system and you are more likely to be reading a literal than a measurement.
+
+**The tautology in detail.** `server.jl:181` encodes *mint happened ⇒ quality was 0.92*. The causality is inverted: F1 is supposed to be the input that decides whether to mint, and here the mint decision manufactures the F1. It has one bit of entropy, it is a deterministic function of `ase_minted` — which the same response also returns — so the field carries **zero information beyond its own neighbour**. It is a unit conversion, not an observation. Its sole contribution is a plausible-looking number under a name that implies measurement.
+
+That matters because of where it lands. Any consumer that persists this value — receipts (`zangbeto_receipts.jl:336` serialises `f1_score` into CBOR), telemetry, agent logs, another agent's context — produces a record indistinguishable from a real measurement. That is how a fabricated number becomes evidence: not by being signed, but by being **stored under a name that implies measurement**.
+
+#### The loop closes
+
+The API both issues the value and accepts it:
+
+```
+POST /run {"opcode":"IMPACT","args":{"ase":1}}
+  -> response: {"f1_score": 0.92, "ase_minted": 1, ...}
+
+POST /run {"opcode":"COMPUTE_PROOF","args":{..., "f1_score":0.92}}
+  -> oso_vm.jl:2420   quality = clamp(f1_score) = 0.92
+  -> proof_value = difficulty x 0.92 x novelty x verification x independence x utility
+```
+
+The system hands the caller a quality score, then accepts that score back as one of six factors behind a 0.3 mint threshold. No forgery is required: **the API is the source of the credential it later honours.** `I-45` detects precisely this shape — a field the API emits may never be a field the API trusts.
+
+#### Inconsistent failure direction
+
+The same concept defaults opposite ways, in the same repo:
+
+```
+server.jl:247              omitted f1 => 0.88   which clears 0.777   => fails OPEN
+zangbeto_receipts.jl:149   omitted f1 => 0.0                        => fails CLOSED
+```
+
+Two defaults, one name, opposite safety. The closed one is correct.
+
+#### Requirements
+
+1. **One name, one provenance.** Four quantities need four names.
+2. **A measured field is written only by the measurement function.**
+3. **A defaulted measurement fails closed**, and its default sits below every gate it feeds.
+4. **A value the API emits may never be a value the API trusts** (`I-45`).
+5. **No response field is derived from another response field by a constant** (`I-43`).
+
 ### 3.4 The HTTP surface — where every finding above becomes reachable
 
 `OSOVM/src/server.jl` exposes 12 routes. The one that executes opcodes has no authentication of any kind.
@@ -512,6 +563,10 @@ Guards: per-epoch clamp `±0.002` (reuse `decay_clamp_per_epoch`), TWAP over the
 | I-40 | the API does not report a score it never computed |
 | I-41 | no gated path is architecturally unreachable (per-request state) |
 | I-42 | mint-capable opcodes are not publicly enumerable |
+| I-43 | no response field is fabricated from another response field by a constant |
+| I-44 | a measurement-named field is written only by a measurement |
+| I-45 | the API cannot both emit a value and accept it as evidence |
+| I-46 | a defaulted measurement fails closed |
 
 ## 11. Constants deltas
 

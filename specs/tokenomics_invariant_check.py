@@ -572,6 +572,64 @@ check(
     "GET /opcodes publishes every mint-capable opcode name to anonymous callers",
 )
 
+# ── I-43..I-46  THE SELF-ISSUED SCORE (the loop closes) ───────────────────
+# f1_score means four different things in one codebase: a real measurement, a
+# pass-by-default constant, a tautology over ase_minted, and a caller argument.
+# They share a name and a plausible range, so consumers cannot tell them apart.
+
+MEASURE = r"f1_score|quality|accuracy|score"
+
+# I-43  no response field is derived from another response field by a constant
+hits = grep(r"f1_score *=.*\? *[0-9]", OSOVM / "src", glob="*.jl")
+check(
+    "I-43",
+    "No response field is fabricated from another response field by a constant",
+    len(hits) == 0,
+    "\n".join(hits[:3]) if hits else "no tautological response field",
+    "delete server.jl:181; it restates ase_minted as a plausible-looking quality score",
+)
+
+# I-44  a measurement-named field is written only by a measurement function
+import re as _re
+lits = []
+for h in grep(r"\bf1_score *=|f1_score *= ", OSOVM / "src", glob="*.jl"):
+    rhs = h.split("=", 1)[1] if "=" in h else ""
+    if _re.search(r"[0-9]\.[0-9]", rhs) or _re.search(r"\? *[0-9]", rhs):
+        lits.append(h)
+check(
+    "I-44",
+    "A measurement-named field is written only by a measurement, never by a literal or default",
+    len(lits) == 0,
+    "\n".join(lits[:4]) if lits else "no constant writes to f1_score",
+    "f1_score must come from compute_f1/veil_f1_score, never from a constant",
+)
+
+# I-45  the API cannot both emit a value and accept it as evidence
+emit = grep(r'"f1_score"\s*=>', OSOVM / "src" / "server.jl")
+accept = grep(r"get\(args, :f1_score", OSOVM / "src")
+check(
+    "I-45",
+    "The API cannot both emit a value and accept that same value as evidence",
+    not (emit and accept),
+    (f"emitted in {len(emit)} response(s); accepted as evidence in {len(accept)} place(s)\n"
+     "=> POST /run returns f1_score 0.92 for any minting call, and COMPUTE_PROOF accepts a\n"
+     "   caller-supplied f1_score as the 'quality' factor of proof_value. The system issues\n"
+     "   the evidence, then accepts it back.") if (emit and accept) else "no self-issued evidence",
+    "a value the API emits may never be an input the API trusts; strip f1_score from the response "
+    "or strip it from the scoring path",
+)
+
+# I-46  a defaulted measurement must fail closed
+hits = grep(r'"f1",\s*(get\([^,]+, :f1,\s*)?0\.88|:f1,\s*0\.88', OSOVM / "src", glob="*.jl")
+check(
+    "I-46",
+    "A defaulted measurement fails closed (default must not pass the gate)",
+    len(hits) == 0,
+    ("\n".join(hits[:3]) + "\n=> default 0.88 exceeds the 0.777 gate, so an OMITTED f1 passes")
+    if hits else "no pass-by-default measurement",
+    "default a missing score to 0.0; note zangbeto_receipts.jl:149 already does",
+)
+
 # ── I-14 Birther royalty: implemented, or the column must not exist ────────
 col = grep(r"royalty_rate", VANTAGE / "backend")
 payer = grep(r"royalty_rate\s*\*|birther_royalty|royalty_payout", VANTAGE / "backend", KODA2 / "omokoda-core" / "src")

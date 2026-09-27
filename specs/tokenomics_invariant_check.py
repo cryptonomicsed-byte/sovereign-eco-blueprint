@@ -683,11 +683,12 @@ check(
 
 
 # ── I-49 Handlers must be exercised by a test ──────────────────────────────
-# server.jl's POST /run threw UndefVarError on every call for an unknown length
-# of time: its bindings were assigned inside a `try` block and read outside it,
-# and in Julia a try block is a scope. Nothing noticed because no test ever
-# invoked the handler -- 1,124 tests, zero references to handle_run. A handler
-# nobody calls is where a dead endpoint hides, so gate on the reference itself.
+# 11 handlers, 1,124 tests, zero references between them. That is how
+# server.jl carries both a fabricated score (line 181: f1_score = 0.92 whenever
+# ase_minted > 0) and a crash path (local vm_result has no default, so a non-Dict
+# return from execute_instruction raises UndefVarError at line 192) without
+# either being noticed. A handler nobody calls is where a dead endpoint hides,
+# so gate on the reference itself, not on anyone's reading of the body.
 _srv_path = OSOVM / "src" / "server.jl"
 _handlers = (
     re.findall(r"^function (handle_[a-z_]+)", _srv_path.read_text(), re.M)

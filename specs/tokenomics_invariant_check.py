@@ -474,6 +474,47 @@ check(
     "pass the real VM state; an empty one makes the check vacuous",
 )
 
+# ── I-35..I-37  EVIDENCE, NOT AUTHORITY ───────────────────────────────────
+# F1 is currently a PARAMETER (from the request), wearing an INTEGRITY stamp
+# (seal / merkle / receipt hash), consumed as AUTHORITY (quorum bias, quality
+# dimension, ASE reward). The missing role is EVIDENCE: an observation about the
+# world made by a party who could have falsified it and didn't.
+
+# I-35  the score is an OUTPUT of verification, never an INPUT to a decision
+hits = grep(r"function \w+\([^)]*\bf1\b|threshold\s*=\s*f1_score|calculate_reward\(f1",
+            OSOVM / "src", glob="*.jl")
+check(
+    "I-35",
+    "The score is an output of verification, never an input to a decision function",
+    len(hits) == 0,
+    "\n".join(hits[:4]) if hits else "no decision function takes a score parameter",
+    "verification computes the score; the decision reads the verified record, never the number",
+)
+
+# I-36  a score must name the referent it was checked against
+hits = grep(r"held_out_root|test_set_root|validation_root|novel_view_root|"
+            r"\breferent_id\b|\breferent_root\b|\bwithheld_root\b",
+            OSOVM / "src", glob="*.jl")
+check(
+    "I-36",
+    "Every score names the referent it was checked against (withheld by a non-claimant)",
+    len(hits) > 0,
+    "\n".join(hits[:3]) if hits else "no referent field anywhere: a score is unfalsifiable by construction",
+    "receipts must carry the id of the withheld artifact (test-split root / committed prediction)",
+)
+
+# I-37  integrity is not truth: a seal must not be the evidence a gate consumes
+hits = grep(r'seal_data\s*=\s*"zangbeto-seal|seal_data\s*=\s*"job-seal', OSOVM / "src", glob="*.jl")
+check(
+    "I-37",
+    "A tamper-evidence seal is not consumed as evidence of the claim's truth",
+    len(hits) == 0,
+    ("\n".join(hits[:3]) + "\n=> seal covers receipt_hash + approvals only; receipt_hash covers a "
+     "caller-supplied f1_score, so the seal certifies the record did not change, not that it is true")
+    if hits else "seals bind a referent",
+    "bind the seal to the referent (withheld artefact root), or stop treating the seal as verification",
+)
+
 # ── I-14 Birther royalty: implemented, or the column must not exist ────────
 col = grep(r"royalty_rate", VANTAGE / "backend")
 payer = grep(r"royalty_rate\s*\*|birther_royalty|royalty_payout", VANTAGE / "backend", KODA2 / "omokoda-core" / "src")

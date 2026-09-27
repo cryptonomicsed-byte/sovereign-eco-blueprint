@@ -92,6 +92,45 @@ Result: ~1,000,000 GPU-hours of Synapse claimed from one GPU-second and a one-ch
 
 Independently: in the Rust client path the anchor is **never set** (`bridge/arp.rs:109 zangbeto_anchor: None`; Zàngbétò is not connected in prod), so the authorized path cannot fire either. **The gated path is simultaneously unreachable from inside the ecosystem and forgeable from outside it.** That is the whole security story of the mint authority.
 
+### 3.3 Evidence, not authority — and never authority by inheritance
+
+> **F1 must be evidence, not authority.** (user, 2026-09-26)
+
+Sharper form of the diagnosis: F1 today is a **parameter** that wears an **integrity stamp** and exercises **authority**. Three roles, none of them the one it should play.
+
+```
+enters as a PARAMETER     f1_score = get(args, :f1_score, 0.0)          -- request body
+receives INTEGRITY        seal = sha256("zangbeto-seal:$(receipt_hash):$approvals")[1:32]
+                          receipt_hash = sha256(entire receipt)          -- receipt holds f1_score
+is consumed as AUTHORITY  threshold = f1_score >= 0.9 ? 'd' : 'c'        -- sets the quorum bias
+                          quality   = clamp(f1, 0, 1)                    -- 1 of 6 score dimensions
+                          ase_amount = f1 >= 0.777 ? reward(f1) : 0      -- 5.0-7.0 ASE, split 5 ways
+```
+
+The missing role is **EVIDENCE**: an observation about the world, made by a party who could have falsified it and did not, checked against a referent the claimant does not hold.
+
+**The seal is the most dangerous part, not the least.** `seal_data = "zangbeto-seal:$(receipt.receipt_hash):$approvals"` is a SHA-256 over the receipt hash and the approval count; the receipt hash covers the receipt, and the receipt carries `f1_score` as an ordinary field. So the seal certifies **that the record has not changed since it was written** — nothing about whether the number is true. But a sealed, Merkle-rooted, witness-approved receipt containing `f1_score = 0.92` will be read as a *verified* 0.92, by operators, by downstream agents, and by whoever maintains this in a year. The seal launders a parameter into the appearance of evidence. **A signed bad input is strictly worse than an unsigned one, because it ends the investigation.**
+
+So the fix order inverts: **do not sign F1, and do not seal it. Replace it.** More cryptography around a claimant-authored number increases the damage.
+
+#### What makes a score evidence — the referent test
+
+> evidentiary weight = the fraction of a score's inputs the claimant could not control
+
+| Level | Referent | Claimant controls | Ladder | Evidentiary weight |
+|---|---|---|---|---|
+| **1** simulation | none — targets, tolerances, entity counts all arrive in the request | everything | 1.0× | **~0 — unfalsifiable.** At most a reproducibility check: same committed inputs + same code ⇒ same score. |
+| **2** spatial_capture | withheld photographs, views chosen *after* capture | the capture, not the test split | 2.0× | partial |
+| **3** sim_to_real | the committed prediction, then the measurement, then witnesses | nothing, after commitment | 5.0× | high |
+
+That table is why the ladder is correct — it is already a monotone ranking of evidentiary weight — and why `simulation` at 1.0× should carry **no issuance authority at all**. It is not weak evidence; it is *not evidence*. `1.0×` should mean "reproducible, therefore cheap to check", not "worth one unit of unverifiable credit".
+
+#### Three requirements
+
+1. **The score is an output of verification, never an input to a decision.** No function that mints, allocates or judges may take a score as a parameter (`I-35`).
+2. **Every score names its referent**, and the referent is withheld by a non-claimant (`I-36`).
+3. **A seal is integrity, not truth.** A seal may *bind* a referent; it may never *stand in* for one (`I-37`).
+
 ## 4. Redefining IMPACT — semantics first, deletion later
 
 Current semantics: *"I say I did impact worth X, therefore credit me X."* That is structurally incompatible with a receipt architecture.
@@ -432,6 +471,9 @@ Guards: per-epoch clamp `±0.002` (reuse `decay_clamp_per_epoch`), TWAP over the
 | I-32 | anti-gaming caps declared in TOC_CONSTANTS are enforced in code |
 | I-33 | no work → ASE issuance path exists |
 | I-34 | verification gates are not called with a fresh/empty state |
+| I-35 | the score is an output of verification, never an input to a decision function |
+| I-36 | every score names the referent it was checked against |
+| I-37 | a tamper-evidence seal is not consumed as evidence of the claim's truth |
 
 ## 11. Constants deltas
 

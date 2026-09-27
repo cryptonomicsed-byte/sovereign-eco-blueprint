@@ -63,20 +63,24 @@ ALLOW_ABSENT: tuple[str, ...] = tuple(
 
 
 def strip_jl_comments(text: str) -> str:
-    """Drop Julia `#` line comments AND triple-quoted docstrings before matching.
+    """Drop Julia `#` line comments and triple-quoted docstrings before matching.
 
-    Two passes:
-    1. Remove all triple-quoted string literals (\"\"\"...\"\"\"): docstrings name
-       deleted symbols and cause false invariant passes when prose contains the
-       identifier being checked (e.g. 'anchor_verified', 'compute_score').
-    2. Remove `#`-to-EOL comments, guarded by an even-quote count so that a `#`
-       inside a single-quoted string is not treated as a comment start.
+    Two passes, in this order:
+
+    1. Strip `#`-to-EOL comments (guarded by even-quote count).
+       Must come FIRST so that a comment like  # the \"\"\" marker
+       cannot pair with the next real docstring in pass 2, which would
+       silently delete source lines between them.
+
+    2. Replace each triple-quoted span with an equal number of blank lines.
+       Blank replacement (not a sentinel token) keeps the stripped line list
+       the same length as the raw line list, so the zip in grep() stays
+       aligned and citations point at the correct source line.
     """
     import re
-    # Pass 1: strip triple-quoted literals (non-greedy, DOTALL)
-    text = re.sub(r'""".*?"""', '""""""', text, flags=re.DOTALL)
-    # Pass 2: strip # comments (not inside single-quoted strings)
-    out = []
+
+    # Pass 1: strip # comments
+    lines = []
     for line in text.splitlines():
         i = line.find("#")
         while i != -1:
@@ -84,8 +88,14 @@ def strip_jl_comments(text: str) -> str:
                 line = line[:i]
                 break
             i = line.find("#", i + 1)
-        out.append(line)
-    return "\n".join(out)
+        lines.append(line)
+    text = "\n".join(lines)
+
+    # Pass 2: replace docstring spans with equal-length blank-line runs
+    def _blank_span(m: "re.Match[str]") -> str:
+        return "\n" * m.group(0).count("\n")
+
+    return re.sub(r'""".*?"""', _blank_span, text, flags=re.DOTALL)
 
 
 def grep(pattern: str, *roots: Path, glob: str = "", fixed: bool = False) -> list[str]:

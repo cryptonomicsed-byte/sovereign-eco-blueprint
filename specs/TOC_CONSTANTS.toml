@@ -43,8 +43,14 @@ decay_ema_alpha       = 0.25            # smoothing — ~4 epochs (28 days) to c
 decay_clamp_per_epoch = 0.002           # max shift per 7-day cycle (prevents oscillation)
 # Three-Tier Economic Constitution additions (2026-09-26):
 synapse_to_dopamine_factor = 0.85       # Synapse → Guild Dopamine conversion (< 1.0 = collective efficiency tax)
-dop_per_gpu_hour      = 1000.0          # DOPAMINE units per GPU-hour (distinct from synapse.per_gpu_hour which is SYN/GPU-hr)
-dop_per_gpu_second    = 0.2778          # = dop_per_gpu_hour / 3600 — pre-computed for per-second accounting
+# dop_per_gpu_hour intentionally equals synapse.per_gpu_hour = 1000.0.
+# SYN and DOP share the same GPU-hour denomination by design (see §3.3 of
+# THREE_TIER_ECONOMIC_CONSTITUTION): pool_G += s_a × f × CONTRIBUTION_FACTOR
+# is unit-preserving — the 0.85 haircut is a dimensionless efficiency tax, not
+# a unit conversion. Enforced in toc_drift_check.py as an equality assertion.
+dop_per_gpu_hour      = 1000.0          # DOPAMINE units per GPU-hour — must equal synapse.per_gpu_hour
+# dop_per_gpu_second is DELETED — derived value (= dop_per_gpu_hour / 3600).
+# Compute in code: gpu_hours = gpu_seconds / 3600.0 (see oso_vm.jl:2457)
 idle_decay_rate       = 0.01            # 1%/day idle decay on Guild Dopamine pool
 
 [synapse]

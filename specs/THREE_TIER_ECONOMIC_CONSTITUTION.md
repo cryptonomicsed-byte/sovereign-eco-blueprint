@@ -228,6 +228,14 @@ Unused allocation at expiry is **not refunded** (compute time reserved). This is
 
 ### 3.3 Agent→Guild Synapse Contribution Flow
 
+**Shared denomination decision (canonical):** SYN and DOP share the same GPU-hour denomination. `TOC_CONSTANTS.synapse.per_gpu_hour == TOC_CONSTANTS.dopamine.dop_per_gpu_hour == 1000.0`. The Guild contribution formula:
+
+```
+pool_G += s_a × f × CONTRIBUTION_FACTOR
+```
+
+is **unit-preserving** — `s_a` is in SYN, `pool_G` is in DOP, and `CONTRIBUTION_FACTOR = 0.85` is a dimensionless collective efficiency tax. This works only because SYN and DOP are denominated identically per GPU-hour. If they ever diverge, the formula becomes dimensionally inconsistent. The equality is enforced as an assertion in `toc_drift_check.py`.
+
 ```
 Agent A wants to join Guild G workcell:
 

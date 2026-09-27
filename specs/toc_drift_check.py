@@ -114,8 +114,7 @@ def check_key_constants(toml: dict) -> list[str]:
         ("synapse.credit_to_alloc_ratio", 1.0, "default credit→allocation ratio"),
         ("synapse.allocation_expiry_secs", 28800.0, "8h allocation expiry"),
         ("dopamine.synapse_to_dopamine_factor", 0.85, "Synapse→Guild Dopamine conversion"),
-        ("dopamine.dop_per_gpu_hour", 1000.0, "DOP per GPU-hour (DOPAMINE units, not SYN)"),
-        ("dopamine.dop_per_gpu_second", 0.2778, "= dop_per_gpu_hour/3600 pre-computed"),
+        ("dopamine.dop_per_gpu_hour", 1000.0, "DOP per GPU-hour — must equal synapse.per_gpu_hour"),
         ("dopamine.idle_decay_rate", 0.01, "1%/day Guild pool idle decay"),
         ("guild.treasury_fraction", 0.05, "5% of agent share to guild treasury"),
         ("guild.job_timeout_secs", 3600.0, "1 hour max job duration"),
@@ -241,34 +240,46 @@ def check_duplicate_literals(toml: dict) -> list[str]:
     for key, val in toml.items():
         by_value.setdefault(val, []).append(key)
 
-    # Pairs that are deliberately equal — document the reason and suppress
+    # Pairs that are deliberately equal — document the reason and suppress from general scan.
+    # Note: dop_per_gpu_second is DELETED from TOC_CONSTANTS (derived, not declared).
     allowed_pairs: set[frozenset[str]] = {
-        # dop/hour and dop/second — same pool, derived relationship
-        frozenset({"dopamine.dop_per_gpu_hour", "dopamine.dop_per_gpu_second"}),
         # 24.0: emission_window_hours (hours in a day) vs sector_count (24 governance sectors)
         # Coincidentally equal; no semantic relationship.
         frozenset({"ase.emission_window_hours", "inheritance.sector_count"}),
         # 10.0: birth_fee (10 ASE) vs sim_to_real_max (10.0× multiplier ceiling)
         # Coincidentally equal; different units (ASE vs multiplier).
         frozenset({"ase.birth_fee", "bonus_ladder.sim_to_real_max"}),
+        # 1000.0: synapse/dopamine pair covered by equality_assertions above — suppress from
+        # general scan since it's already enforced there.
+        frozenset({"synapse.per_gpu_hour", "dopamine.dop_per_gpu_hour"}),
     }
 
-    # Suspicious pairs that require an explicit architectural decision
-    suspicious_pairs: list[tuple[str, str, str]] = [
+    # Enforced equality assertions: pairs that MUST stay equal by design.
+    # These fail if the values diverge (not if they match).
+    # Rationale: THREE_TIER_ECONOMIC_CONSTITUTION §3.3 — pool_G += s_a × f × CONTRIBUTION_FACTOR
+    # is unit-preserving. SYN and DOP share the same GPU-hour denomination; the 0.85 haircut
+    # is a dimensionless efficiency tax, not a unit conversion. If these diverge, the
+    # formula becomes dimensionally inconsistent.
+    equality_assertions: list[tuple[str, str, str]] = [
         (
             "synapse.per_gpu_hour",
             "dopamine.dop_per_gpu_hour",
-            "Both = 1000.0 (SYN/GPU-hr vs DOP/GPU-hr). Deliberate equal denomination or "
-            "coincidence? Needs architectural sign-off — see THREE_TIER_ECONOMIC_CONSTITUTION §3.",
+            "SYN and DOP share GPU-hour denomination by design (THREE_TIER_ECONOMIC_CONSTITUTION §3.3). "
+            "Divergence means the Guild contribution formula pool_G += s × f × CONTRIBUTION_FACTOR "
+            "is dimensionally inconsistent. Change both together or neither.",
         ),
     ]
 
-    for key_a, key_b, note in suspicious_pairs:
+    for key_a, key_b, note in equality_assertions:
         val_a = toml.get(key_a)
         val_b = toml.get(key_b)
-        if val_a is not None and val_b is not None and abs(val_a - val_b) < 1e-9:
+        if val_a is None:
+            errors.append(f"EQUALITY ASSERTION: {key_a} missing from TOC_CONSTANTS")
+        elif val_b is None:
+            errors.append(f"EQUALITY ASSERTION: {key_b} missing from TOC_CONSTANTS")
+        elif abs(val_a - val_b) > 1e-9:
             errors.append(
-                f"DUPLICATE LITERAL ({val_a}): {key_a} and {key_b} share the same value. {note}"
+                f"EQUALITY DRIFT: {key_a}={val_a} ≠ {key_b}={val_b}. {note}"
             )
 
     # General scan: flag large values (≥10.0) appearing in ≥2 unrelated sections.

@@ -41,6 +41,10 @@ decay_min             = 0.001           # 0.1%/day at U=0 (idle network, 693-day
 decay_max             = 0.020           # 2.0%/day at U=1 (saturated, 35-day half-life)
 decay_ema_alpha       = 0.25            # smoothing — ~4 epochs (28 days) to converge
 decay_clamp_per_epoch = 0.002           # max shift per 7-day cycle (prevents oscillation)
+# Three-Tier Economic Constitution additions (2026-09-26):
+synapse_to_dopamine_factor = 0.85       # Synapse → Guild Dopamine conversion (< 1.0 = collective efficiency tax)
+dop_per_gpu_second    = 0.2778          # 1000 DOP = 1 GPU-hour (derived: 1000 / 3600)
+idle_decay_rate       = 0.01            # 1%/day idle decay on Guild Dopamine pool
 
 [synapse]
 # Per-agent compute slice — SHARE of Dopamine pool, not absolute.
@@ -51,6 +55,11 @@ transferable          = true
 conversion_ratio      = 0.1             # 10 Dopamine → 1 Synapse (10:1 burn)
 per_gpu_hour          = 1000.0          # Synapse minted per verified GPU-hour
 # Decay mirrors Dopamine — same dynamic formula, same epoch schedule
+# Three-Tier Economic Constitution additions (2026-09-26):
+base_cost_ase         = 1.0             # 1 ASE = 1000 SYN (base cost before scarcity curve)
+saturation_count      = 100.0           # nonlinear scarcity knee: 100 agents → cost doubles
+credit_to_alloc_ratio = 1.0             # default SynapseCredit → SynapseAllocation conversion
+allocation_expiry_secs = 28800.0        # 8 hours: unused allocation expires (no refund)
 
 [esu]
 # Èṣù tithe — 3.69% on value-job settlements
@@ -121,6 +130,22 @@ ground_robot          = 3.0    # verified ground robot / quadruped operation
 sim_to_real           = 5.0    # simulation whose PREDICTION matched reality
 # sim_to_real ceiling — governance may raise to 10.0x for high-stakes proofs
 sim_to_real_max       = 10.0   # maximum allowed after governance vote
+
+[guild]
+# Three-Tier Economic Constitution (2026-09-26):
+treasury_fraction     = 0.05            # 5% of agent_total_share → guild treasury per job
+job_timeout_secs      = 3600.0          # max job duration before Dopamine soft-lock released
+max_contribution_fraction = 1.0         # agent may contribute up to 100% of allocation
+
+[birthright]
+# Three-Tier Economic Constitution (2026-09-26):
+qualifying_fraction   = 0.10            # 10% of qualifying human-originated revenue
+max_chain_depth       = 0               # 0 = flat birthright (no recursive agent-born-agent chain)
+
+[settlement]
+# Three-Tier Economic Constitution (2026-09-26):
+quote_expiry_secs     = 300.0           # COMPUTE_QUOTE expires after 5 minutes
+min_work_evidence_score = 0.777         # universal quality gate (F1 or equivalent)
 
 # Anti-gaming guards (enforced at EndBlock / TOC_MINT gate):
 # 1. Per-agent per-epoch cap (Dopamine units): prevents bulk farming

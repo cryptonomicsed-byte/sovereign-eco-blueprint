@@ -108,6 +108,21 @@ def check_key_constants(toml: dict) -> list[str]:
         ("gates.stake_fraction", 0.10, "10% stake gate"),
         ("ritual.sabbath_multiplier", 1.10, "Sabbath 1.1×"),
         ("ritual.jubilee_minor_multi", 2.0, "Jubilee 2.0×"),
+        # Three-Tier Economic Constitution constants (2026-09-26)
+        ("synapse.base_cost_ase", 1.0, "1 ASE = 1000 SYN base cost"),
+        ("synapse.saturation_count", 100.0, "scarcity knee at 100 agents"),
+        ("synapse.credit_to_alloc_ratio", 1.0, "default credit→allocation ratio"),
+        ("synapse.allocation_expiry_secs", 28800.0, "8h allocation expiry"),
+        ("dopamine.synapse_to_dopamine_factor", 0.85, "Synapse→Guild Dopamine conversion"),
+        ("dopamine.dop_per_gpu_second", 0.2778, "1000 DOP = 1 GPU-hour"),
+        ("dopamine.idle_decay_rate", 0.01, "1%/day Guild pool idle decay"),
+        ("guild.treasury_fraction", 0.05, "5% of agent share to guild treasury"),
+        ("guild.job_timeout_secs", 3600.0, "1 hour max job duration"),
+        ("guild.max_contribution_fraction", 1.0, "agent may contribute 100% of allocation"),
+        ("birthright.qualifying_fraction", 0.10, "10% of qualifying human-originated revenue"),
+        ("birthright.max_chain_depth", 0.0, "flat birthright — no recursive chain"),
+        ("settlement.quote_expiry_secs", 300.0, "COMPUTE_QUOTE expires in 5 min"),
+        ("settlement.min_work_evidence_score", 0.777, "universal quality gate"),
     ]
 
     for key, expected, desc in checks:

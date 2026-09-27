@@ -184,6 +184,55 @@ Two defaults, one name, opposite safety. The closed one is correct.
 4. **A value the API emits may never be a value the API trusts** (`I-45`).
 5. **No response field is derived from another response field by a constant** (`I-43`).
 
+### 3.4b The gate failed open too — same defect, one level up
+
+The invariants above were checked by `specs/tokenomics_invariant_check.py`. That
+checker contained the very shortcut it exists to catch.
+
+Its `grep()` helper did this:
+
+```python
+for root in roots:
+    if not root.exists():
+        continue                      # I-47: absence read as compliance
+...
+except subprocess.TimeoutExpired:
+    continue                          # I-48: a timeout read as a clean result
+```
+
+A root the gate could not look at was skipped, and a check that never ran
+reported nothing — which the gate counted as *passing*. The consequence is
+measurable and perverse: pointed at a machine holding **none** of the six roots,
+the gate reports **fewer** failures than against the real tree (24 vs 43), i.e.
+a better score for a less-verified tree. That is `server.jl:181`'s shape exactly
+— a number that moves inversely to the thing it is named after.
+
+Three further structural facts, all verified:
+
+| Fact | Evidence |
+|---|---|
+| Nothing ran it automatically | no hooks in either repo (`.git/hooks` empty of non-samples); OSOVM's only workflow was `arm-determinism.yml` |
+| Constitution and governed code were in different repos | checker in `sovereign-eco-blueprint`; code in `OSOVM`. No hook in either can gate a commit to the other |
+| It could not run off one machine | `HOME = Path.home()` then `HOME/"OSOVM"` etc. — six hard-coded roots, despite the docstring claiming "CI can gate on it" |
+
+Fixed: roots are now env-overridable (`ECO_HOME`, `ECO_*_ROOT`); an undeclared
+missing root and a timed-out grep are both failures (`I-47`, `I-48`); a root that
+is genuinely unreproducible may be named in `ECO_ALLOW_ABSENT`, which prints
+`[SKIP] not measured` — never a pass. `OSOVM/.github/workflows/invariants.yml`
+now runs the gate on every push to `src/**`, checking out all five canonical
+repos, and hard-gates on I-47/I-48 only.
+
+**The failure count is deliberately not gated.** An invariant set built from
+negative greps is satisfied by an empty tree, so the count cannot be a compliance
+score while the negative invariants lack a declared denominator. Wiring CI to a
+number that rewards an emptier tree would reproduce this defect in the last place
+left to notice it.
+
+Two follow-ups this exposed: the gate reads `~/technosis/aio` — a mirror of the
+**retired** `Bino-Elgua/AIO` account — so it inspects the same project twice,
+once from a tree that cannot be reproduced; and `toc_int()` returns `None` when
+`TOC_CONSTANTS.toml` is absent, a third silent-degrade path of the same family.
+
 ### 3.4 The HTTP surface — where every finding above becomes reachable
 
 `OSOVM/src/server.jl` exposes 12 routes. The one that executes opcodes has no authentication of any kind.
@@ -567,6 +616,8 @@ Guards: per-epoch clamp `±0.002` (reuse `decay_clamp_per_epoch`), TWAP over the
 | I-44 | a measurement-named field is written only by a measurement |
 | I-45 | the API cannot both emit a value and accept it as evidence |
 | I-46 | a defaulted measurement fails closed |
+| I-47 | every root the gate reads is present — an unmeasured root is not compliance |
+| I-48 | a timed-out grep is not a clean grep |
 
 ## 11. Constants deltas
 

@@ -14,19 +14,45 @@ of failing checks, so CI can gate on it.
 Run:  python3 specs/tokenomics_invariant_check.py
 """
 
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 
-HOME = Path.home()
-BP = HOME / "sovereign-eco-blueprint"
-OSOVM = HOME / "OSOVM"
-KODA2 = HOME / "Omo-Koda2"
-VANTAGE = HOME / "Vantage"
+# Repo roots. The defaults reproduce the original single-developer $HOME layout;
+# the env vars let CI -- or any other checkout shape -- point the gate at the
+# real trees. Before this the gate hard-coded $HOME/<repo>, so despite the
+# docstring claiming "CI can gate on it", it could only run on one machine.
+HOME = Path(os.environ.get("ECO_HOME", str(Path.home())))
+BP = Path(os.environ.get("ECO_BP_ROOT", HOME / "sovereign-eco-blueprint"))
+OSOVM = Path(os.environ.get("ECO_OSOVM_ROOT", HOME / "OSOVM"))
+KODA2 = Path(os.environ.get("ECO_KODA2_ROOT", HOME / "Omo-Koda2"))
+VANTAGE = Path(os.environ.get("ECO_VANTAGE_ROOT", HOME / "Vantage"))
 TOC = BP / "specs" / "TOC_CONSTANTS.toml"
 
 FAILURES: list[str] = []
+
+# Absence must never read as compliance. A root the gate could not look at, and
+# a grep that timed out, are both UNMEASURED -- and an unmeasured check is a
+# failed check, not a passed one (I-44). Silently `continue`-ing on either made
+# the gate fail OPEN: point it at a machine missing Vantage and it reports
+# FEWER failures -- a better score for a less-verified tree. That is the same
+# shape as server.jl:247 (omitted f1 => 0.88 => clears the gate), one level up.
+UNMEASURED: dict[str, set[str]] = {
+    "missing_root": set(),
+    "timeout": set(),
+    "declared_absent": set(),
+}
+
+# Roots that are legitimately not reproducible off this machine (a retired-account
+# mirror, a vendored tree only this box has). Naming one here does NOT make it a
+# pass -- it prints [SKIP] not-measured on every run, so the gap stays visible
+# instead of being laundered into compliance. Set ECO_ALLOW_ABSENT to a
+# comma-separated list of path substrings.
+ALLOW_ABSENT: tuple[str, ...] = tuple(
+    s.strip() for s in os.environ.get("ECO_ALLOW_ABSENT", "").split(",") if s.strip()
+)
 
 
 def grep(pattern: str, *roots: Path, glob: str = "", fixed: bool = False) -> list[str]:
@@ -34,6 +60,8 @@ def grep(pattern: str, *roots: Path, glob: str = "", fixed: bool = False) -> lis
     hits: list[str] = []
     for root in roots:
         if not root.exists():
+            bucket = "declared_absent" if any(a in str(root) for a in ALLOW_ABSENT) else "missing_root"
+            UNMEASURED[bucket].add(str(root))
             continue
         cmd = ["grep", "-rn"]
         if fixed:
@@ -45,6 +73,7 @@ def grep(pattern: str, *roots: Path, glob: str = "", fixed: bool = False) -> lis
         try:
             out = subprocess.run(cmd, capture_output=True, text=True, timeout=60).stdout
         except subprocess.TimeoutExpired:
+            UNMEASURED["timeout"].add(str(root))
             continue
         for ln in out.splitlines():
             if ln.strip():
@@ -652,10 +681,48 @@ check(
 )
 
 
+# ── Unmeasured input is a failure, reported last so it is not buried ────────
+# A root the gate could never look at is NOT a passed check -- I-44 applied to
+# the gate itself. Declared-absent roots print [SKIP] and never a pass, so a
+# known gap stays visible instead of being laundered into compliance, while an
+# UNDECLARED gap counts as a failure. Each unmeasured root is its own failing
+# check, because "7 roots unseen" and "1 root unseen" are not the same news.
+def _rel(root: str) -> str:
+    return root.replace(str(HOME) + "/", "")
+
+
+for _root in sorted(UNMEASURED["declared_absent"]):
+    print(f"[SKIP]     not measured (declared absent): {_rel(_root)}")
+    print("        anything this root would have proven is UNVERIFIED, not fine")
+
+for _root in sorted(UNMEASURED["missing_root"]):
+    check(
+        "I-47",
+        f"Unmeasured root is not compliance: {_rel(_root)}",
+        False,
+        "the gate could not look here, so it must not report compliance",
+        "check the repo out beside the others, set its ECO_*_ROOT env var, or "
+        "declare it via ECO_ALLOW_ABSENT if it is genuinely unreproducible",
+    )
+
+for _root in sorted(UNMEASURED["timeout"]):
+    check(
+        "I-48",
+        f"Timed-out grep is not a clean grep: {_rel(_root)}",
+        False,
+        "grep exceeded 60s -- 'no hits' was never established",
+        "narrow the pattern or raise the timeout; a timeout is not a clean result",
+    )
+
 print()
 print(f"{'=' * 72}")
+if UNMEASURED["missing_root"] or UNMEASURED["timeout"] or UNMEASURED["declared_absent"]:
+    print(f"coverage: {len(UNMEASURED['missing_root'])} undeclared-absent, "
+          f"{len(UNMEASURED['timeout'])} timed-out, "
+          f"{len(UNMEASURED['declared_absent'])} declared-absent root(s)")
 if FAILURES:
-    print(f"{len(FAILURES)} invariant(s) FAILING: {', '.join(FAILURES)}")
+    _uniq = sorted(set(FAILURES), key=lambda c: (len(c), c))
+    print(f"{len(FAILURES)} check(s) FAILING: {', '.join(_uniq)}")
 else:
     print("all invariants hold")
 sys.exit(len(FAILURES))

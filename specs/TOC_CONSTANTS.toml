@@ -29,7 +29,7 @@ treasury              = 0.05        # Bínò treasury
 # 86B is the genesis seed; pool expands via @gpuContribution verified work.
 genesis_seed          = 86_000_000_000  # starting pool (elastic — grows with compute)
 transferable          = false           # NOT a tradeable token
-ase_to_dopamine       = 10_000          # 1 ASE → 10,000 Dopamine (burn rate)
+agent_burn_rate       = 10_000          # 1 ASE → 10,000 Dopamine (burn rate)
 opcode_mint           = "0x54"          # @tocMint opcode
 opcode_decay          = "0x55"          # @tocDecay opcode
 opcode_contribution   = "0x3f"          # @gpuContribution opcode

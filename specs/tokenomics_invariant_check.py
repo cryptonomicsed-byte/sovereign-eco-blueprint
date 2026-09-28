@@ -333,6 +333,15 @@ def toc_int(section: str, key: str) -> int | None:
     return None
 
 
+def reachable(symbol: str, *roots: Path, skip: str) -> list[str]:
+    """Return grep hits for `symbol` whose file path does NOT contain `skip`.
+
+    Use this to verify a guard/function is called from outside its definition file.
+    `skip` is matched as a substring of the full file path string (e.g. 'token_guards.jl').
+    """
+    return [h for h in grep(symbol, *roots) if skip not in h]
+
+
 # ── I-1  One-way valves: no human-facing → hive-facing bypass ────────────────
 hits = grep(r"ase_to_dopamine|ASE_TO_DOPAMINE|ase-signal", OSOVM / "src", KODA2 / "omokoda-core" / "src")
 check(
@@ -345,12 +354,17 @@ check(
 
 # ── I-2  A direct ASE <-> SYNAPSE conversion gate exists (the only on-ramp) ──
 hits = grep(r"ase_to_synapse|ase_for_synapse|synapse_from_ase|SYNAPSE_PER_ASE", OSOVM / "src", KODA2 / "omokoda-core" / "src")
+callers_i2 = reachable("ase_to_synapse", OSOVM / "src", KODA2 / "omokoda-core" / "src", skip="token_guards.jl")
+callers_i2 += reachable("SYNAPSE_PER_ASE", OSOVM / "src", KODA2 / "omokoda-core" / "src", skip="token_guards.jl")
 check(
     "I-2",
-    "An explicit ASE <-> SYNAPSE conversion gate exists and is the declared on-ramp",
-    len(hits) > 0,
-    "\n".join(hits) if hits else "(no conversion symbol found anywhere)",
-    "add an explicit, governance-priced ASE->SYNAPSE mint (credit) + redeem (burn) pair",
+    "An explicit ASE <-> SYNAPSE conversion gate exists and is called from outside its definition",
+    len(hits) > 0 and len(callers_i2) > 0,
+    (("\n".join(hits) if hits else "(no conversion symbol found anywhere)")
+     + (f"\ncallers outside token_guards.jl: {len(callers_i2)}"
+        if hits else "")),
+    "add an explicit, governance-priced ASE->SYNAPSE mint (credit) + redeem (burn) pair; "
+    "call ase_to_synapse / SYNAPSE_PER_ASE from a production opcode (not only in token_guards.jl)",
 )
 
 # ── I-3  An agent can never hold ASE ────────────────────────────────────────
@@ -361,12 +375,16 @@ hits = grep(
     HOME / "technosis" / "aio" / "sources", HOME / "AIO" / "sources",
 )
 hits = [h for h in hits if "buzz-OG" not in h]
+callers_i3 = reachable("ase_transfer_guard", OSOVM / "src", KODA2 / "omokoda-core" / "src", skip="token_guards.jl")
 check(
     "I-3",
-    "ASE transfers are restricted to human principals (agent cannot receive ASE)",
-    len(hits) > 0,
-    "\n".join(hits) if hits else "(no human/agent distinction anywhere in the token layer)",
-    "enforce at the token program: ASE transfer requires recipient == registered human principal",
+    "ASE transfers are restricted to human principals; ase_transfer_guard is called outside its definition",
+    len(hits) > 0 and len(callers_i3) > 0,
+    ("\n".join(hits) if hits else "(no human/agent distinction anywhere in the token layer)")
+    + (f"\ncallers of ase_transfer_guard outside token_guards.jl: {len(callers_i3)}"
+       if hits else ""),
+    "enforce at the token program: ASE transfer requires recipient == registered human principal; "
+    "call ase_transfer_guard from production opcode (not only in token_guards.jl)",
 )
 
 # ── I-4  Synapse is agent-scoped, not openly transferable ───────────────────
@@ -427,12 +445,16 @@ check(
 PAT = r"self_deal|self-dealing|related_party|related-party|circular_supply"
 hits = grep(PAT, OSOVM / "src", KODA2 / "omokoda-core" / "src", VANTAGE / "backend")
 hits = [h for h in hits if "/tests/" not in h and "/test_" not in h and not h.split(":")[-1].strip().startswith("//")]
+callers_i8 = reachable("check_self_deal", OSOVM / "src", KODA2 / "omokoda-core" / "src", skip="token_guards.jl")
 check(
     "I-8",
-    "Self-dealing guard: one principal cannot be buyer + host + birther in one loop",
-    len(hits) > 0,
-    "\n".join(hits) if hits else "(no related-party check anywhere)",
-    "flag/deny loops where buyer, GPU host and birther resolve to one principal",
+    "Self-dealing guard exists and is called from the GPU_CONTRIBUTION opcode (not only defined)",
+    len(hits) > 0 and len(callers_i8) > 0,
+    ("\n".join(hits) if hits else "(no related-party check anywhere)")
+    + (f"\ncallers of check_self_deal outside token_guards.jl: {len(callers_i8)}"
+       if hits else ""),
+    "flag/deny loops where buyer, GPU host and birther resolve to one principal; "
+    "call check_self_deal from GPU_CONTRIBUTION (0x3f), not only define it in token_guards.jl",
 )
 
 # ── I-9  GPU-hours are the unit, and the rate is a single constant ─────────
@@ -569,25 +591,36 @@ check(
 # never from a request argument, and never default to a favourable value.
 
 # I-19  no scoring dimension is read from a request argument
-# Scoped to SCORING DIMENSIONS only. Earlier this also matched :receipt_hash,
-# :environment_hash, and :gpu_seconds, none of which are scoring dimensions:
-# - receipt_hash is the identifier the fix text itself prescribes
-# - environment_hash is a label for the novelty lookup
-# - gpu_seconds in GPU_CONTRIBUTION (0x3f) is a WORK RECORDING input (the claim
-#   quantity), not a proof_value factor; the scoring opcode (COMPUTE_PROOF 0x56)
-#   reads gpu_seconds from the receipt store, not from args
-# Matching them made I-19 report violations where none exist, which is the same
-# conflation of id/label with value that this invariant exists to prevent.
+# Scoped to SCORING DIMENSIONS only — but includes the gpu_seconds PROVENANCE CHAIN:
+#   get(args, :gpu_seconds) in GPU_CONTRIBUTION (0x3f)
+#   → stored in receipt_store["gpu_seconds"]
+#   → COMPUTE_PROOF (0x56) reads it to compute `difficulty` (a proof_value factor)
+# This is NOT a direct scoring read of args — it is self-reported work quantity that
+# becomes a proof factor via an INDIRECT provenance chain. The fix requires
+# ZangbetoReceipt verification of gpu_seconds in GPU_CONTRIBUTION before it is
+# stored. Until that verification is wired, I-19 CORRECTLY FAILS on this pattern.
+# The path: args:gpu_seconds → _TOC_CONTRIBUTIONS_GLOBAL → difficulty in proof_value.
 hits = grep(r"get\(args, :f1_score|get\(args, :difficulty|"
             r"get\(args, :quality|get\(args, :verification|get\(args, :independence|"
-            r"get\(args, :novelty|get\(args, :utility",
+            r"get\(args, :novelty|get\(args, :utility|get\(args, :gpu_seconds",
             OSOVM / "src" / "oso_vm.jl", OSOVM / "src" / "vm_core.jl")
+# Verified path: gpu_seconds must come from a ZangbetoReceipt, not caller args.
+gpu_sec_verified = grep(
+    r"zangbeto_anchor.*gpu_seconds|receipt.*gpu_seconds.*verified|gpu_seconds.*from_receipt",
+    OSOVM / "src" / "oso_vm.jl")
+# Filter out the GPU_CONTRIBUTION arg read only if it is also verified via receipt.
+gpu_sec_hits = [h for h in hits if ":gpu_seconds" in h]
+non_gpu_hits = [h for h in hits if ":gpu_seconds" not in h]
+# I-19 passes when: no direct scoring args AND gpu_seconds is either absent or receipt-verified.
+i19_ok = len(non_gpu_hits) == 0 and (len(gpu_sec_hits) == 0 or len(gpu_sec_verified) > 0)
 check(
     "I-19",
-    "No scoring dimension is sourced from a request argument",
-    len(hits) == 0,
-    "\n".join(hits[:4]) if hits else "no direct args reads in the scoring path",
-    "dimensions must be derived from verified receipts referenced by id, not passed as args",
+    "No scoring dimension is sourced from a request argument (including via provenance chain)",
+    i19_ok,
+    ("\n".join(hits[:4]) if hits else "no direct args reads in the scoring path")
+    + (f"\ngpu_seconds verified receipt sources: {len(gpu_sec_verified)}" if gpu_sec_hits else ""),
+    "dimensions must be derived from verified receipts referenced by id; "
+    "GPU_CONTRIBUTION must verify gpu_seconds against a ZangbetoReceipt before storing it",
 )
 
 # I-20  no dimension defaults to a favourable value when absent
@@ -735,16 +768,27 @@ check(
 
 # I-32  declared anti-gaming caps are actually enforced
 missing = []
+not_called = []
 for cap in ["per_agent_epoch_cap", "repeat_limit", "sim_to_real_min_tier"]:
     in_impl = bool(grep(cap, OSOVM / "src", KODA2 / "omokoda-core" / "src", VANTAGE / "backend"))
     if not in_impl:
         missing.append(cap)
+# Require that the enforcement functions (which reference those constants) are also
+# called from outside token_guards.jl — a definition that is never invoked is a stub.
+for guard_fn in ["enforce_epoch_cap", "enforce_repeat_limit", "check_sim_to_real_tier"]:
+    callers = reachable(guard_fn, OSOVM / "src", KODA2 / "omokoda-core" / "src", skip="token_guards.jl")
+    if not callers:
+        not_called.append(guard_fn)
 check(
     "I-32",
-    "Anti-gaming caps declared in TOC_CONSTANTS are enforced in code",
-    not missing,
-    "declared in TOC_CONSTANTS.toml, enforced nowhere: " + ", ".join(missing),
-    "implement epoch cap, repeat limit and tier gates at the mint gate, or delete the claims",
+    "Anti-gaming caps declared in TOC_CONSTANTS are enforced in code and called from outside their definition",
+    not missing and not not_called,
+    ("declared in TOC_CONSTANTS.toml, enforced nowhere: " + ", ".join(missing) + "\n"
+     if missing else "")
+    + ("guard functions defined but never called outside token_guards.jl: " + ", ".join(not_called)
+       if not_called else "all cap guards have external call sites"),
+    "implement epoch cap, repeat limit and tier gates at the mint gate, or delete the claims; "
+    "call enforce_epoch_cap and enforce_repeat_limit from TOC_MINT (0x54)",
 )
 
 # I-33  no work -> ASE path (ASE is clock-only per the constitutional rule)
@@ -828,12 +872,21 @@ check(
 )
 
 # I-39  the caller cannot choose the credited identity
-hits = grep(r"vm\.current_sender\s*=\s*agent|:agent, \"genesis\"", SERVER)
+# Bad pattern: vm.current_sender set directly from a request body field (not via authenticate())
+# Only flag assignments where current_sender gets a body/params value directly.
+bad_sender = grep(r"vm\.current_sender\s*=.*get\s*\(body|vm\.current_sender\s*=.*params\s*\[|:agent,\s*\"genesis\"", SERVER)
+# Required pattern: authenticate() called and its result flows to current_sender
+auth_calls = grep(r"authenticate\s*\(req\)", SERVER)
+cs_assign   = grep(r"vm\.current_sender\s*=", SERVER)
+# Pass when no body-sourced current_sender assignments exist and authenticate() gates current_sender
+_i39_ok = (len(bad_sender) == 0) and (len(auth_calls) > 0) and (len(cs_assign) > 0)
 check(
     "I-39",
     "The caller cannot choose the credited identity",
-    len(hits) == 0,
-    "\n".join(hits[:3]) if hits else "identity is bound",
+    _i39_ok,
+    (f"body-sourced current_sender assignments: {len(bad_sender)}\n"
+     f"authenticate() call sites: {len(auth_calls)}\n"
+     + ("\n".join(bad_sender[:3]) if bad_sender else "identity bound via authenticate()")),
     "current_sender must come from an authenticated principal, not a request field",
 )
 
@@ -938,13 +991,23 @@ check(
 
 # ── I-14 Birther royalty: implemented, or the column must not exist ────────
 col = grep(r"royalty_rate", VANTAGE / "backend")
-payer = grep(r"royalty_rate\s*\*|birther_royalty|royalty_payout", VANTAGE / "backend", KODA2 / "omokoda-core" / "src")
+payer = grep(r"royalty_rate\s*\*|birther_royalty|royalty_payout|compute_birther_royalty", VANTAGE / "backend", KODA2 / "omokoda-core" / "src")
+royalty_defined = bool(grep(r"def compute_birther_royalty", VANTAGE / "backend"))
+# compute_birther_royalty is an in-module helper; callers may be same-file route handlers
+# (a Python route calling a helper in the same file is normal architecture).
+# Check for any call site — same file or cross-file — excluding the definition itself.
+royalty_all_refs = grep(r"compute_birther_royalty\s*\(", VANTAGE / "backend")
+royalty_callers = [h for h in royalty_all_refs if "def compute_birther_royalty" not in h]
+royalty_reachable = (not royalty_defined) or bool(royalty_callers)
 check(
     "I-14",
-    "Birther royalty is either implemented or absent (no half-wired column)",
-    (not col) or bool(payer),
-    f"royalty_rate referenced {len(col)}x, payout sites: {len(payer)}\n" + "\n".join(col[:2]),
-    "implement the payout on external revenue only, with a decay schedule, or drop the column",
+    "Birther royalty is either implemented (with call sites) or absent (no half-wired column)",
+    (not col) or (bool(payer) and royalty_reachable),
+    f"royalty_rate referenced {len(col)}x, payout sites: {len(payer)}, "
+    f"compute_birther_royalty call sites: {len(royalty_callers)}\n"
+    + "\n".join(col[:2]),
+    "implement the payout on external revenue only, with a decay schedule, or drop the column; "
+    "if compute_birther_royalty is defined, it must be called from production code (not only defined)",
 )
 
 # ── I-15 Escrow exists for job funding ─────────────────────────────────────

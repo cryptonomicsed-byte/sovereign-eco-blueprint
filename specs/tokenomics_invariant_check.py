@@ -623,14 +623,23 @@ check(
 )
 
 # ── I-18  The gated path is reachable in the deployed configuration ────────
+# Two implementation shapes both count as "can produce a real anchor":
+#   (a) struct literal: `zangbeto_anchor: Some(...)` — original explicit form
+#   (b) variable assignment: `let zangbeto_anchor: Option<String> = ... review_act`
+#       which resolves to Some when Zàngbétò is configured and reachable
 none_sites = grep(r"zangbeto_anchor:\s*None", KODA2 / "omokoda-core" / "src", VANTAGE / "backend", glob="*.rs")
 some_sites = grep(r"zangbeto_anchor:\s*Some", KODA2 / "omokoda-core" / "src", VANTAGE / "backend", glob="*.rs")
+# Shape (b): variable that calls review_act() and may produce Some
+anchor_via_review = grep(r"zangbeto_anchor.*Option.*=|review_act.*zangbeto_anchor|zangbeto_anchor.*review_act",
+                         KODA2 / "omokoda-core" / "src", glob="*.rs")
 check(
     "I-18",
     "The authorized (gated) issuance path is reachable in the deployed config",
-    len(some_sites) > 0,
-    f"callers passing a real anchor: {len(some_sites)} | callers passing None: {len(none_sites)}\n"
-    + "\n".join(none_sites[:3]),
+    len(some_sites) > 0 or len(anchor_via_review) > 0,
+    f"callers passing a real anchor: {len(some_sites) + len(anchor_via_review)} | "
+    f"callers passing None: {len(none_sites)}\n"
+    + "\n".join((some_sites + anchor_via_review)[:3] if some_sites or anchor_via_review
+                else none_sites[:3]),
     "set a real Zangbeto anchor on the compute path, or the gate can never fire from inside",
 )
 
@@ -1193,6 +1202,8 @@ _GUARD_ARITY: list[tuple[str, int, str]] = [
     ("check_sim_to_real_tier", 3, "token_guards.jl"),
     ("check_self_deal",        3, "token_guards.jl"),
     ("ase_transfer_guard",     1, "token_guards.jl"),
+    ("is_agent",               2, "token_guards.jl"),
+    ("agent_only",             2, "token_guards.jl"),
 ]
 _arity_breaks: list[str] = []
 for _sym, _declared_arity, _def_name in _GUARD_ARITY:

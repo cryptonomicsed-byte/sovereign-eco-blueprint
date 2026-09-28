@@ -58,7 +58,10 @@ idle_decay_rate       = 0.01            # 1%/day idle decay on Guild Dopamine po
 # Decision 2026-09-15: percentage-of-pool removes the 1,000-agent hard cap.
 # max_pool_share: one agent may hold at most 0.5% of total Dopamine pool.
 max_pool_share        = 0.005           # 0.5% of Dopamine pool max per agent
-transferable          = true
+# transferable = "agent_only": Synapse may be transferred between registered agents
+# only. Human principals may NOT hold or receive Synapse directly (I-4).
+# The token program must call is_agent(recipient) and deny non-agent recipients.
+transferable          = "agent_only"
 conversion_ratio      = 0.1             # 10 Dopamine → 1 Synapse (10:1 burn)
 per_gpu_hour          = 1000.0          # Synapse minted per verified GPU-hour
 # Decay mirrors Dopamine — same dynamic formula, same epoch schedule

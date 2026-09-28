@@ -120,6 +120,10 @@ agent_dopamine        = 0.55            # 55% burned → Dopamine signal (comput
 opcode               = "0x56"           # @computeProof
 scoring_threshold     = 0.777           # F1 quality gate (≥0.777 passes)
 
+[veilsim]
+# VeilSim scoring — separate gate from compute_proof (veil execution vs. GPU work)
+scoring_threshold     = 0.9             # F1 quality gate for veil simulation records
+
 [bonus_ladder]
 # Governance-configurable emission multipliers per WorkDomain.
 # Applied to compute_score = claimed_quantity × multiplier.

@@ -1248,6 +1248,32 @@ check(
     "a 0.0 argument makes the function permanently return 0 regardless of the rate",
 )
 
+# ── I-54  Threshold literal must not live in the same module as the measured quantity
+# A module that owns BOTH the measurement AND its own pass/fail threshold can
+# self-certify: raise the threshold to 1.0 and nothing notices. Thresholds must
+# be sourced from a shared constants module (TOC_CONSTANTS → Constants.jl) so
+# they are visible across languages and auditable without reading the measurement code.
+#
+# Pattern caught: `const F1_THRESHOLD = <float>` defined in the same file that
+# also contains the F1 measurement or comparison (`check_f1_threshold`).
+# After the fix, veilos_antispam.jl reads F1_THRESHOLD from Constants.jl which
+# reads from TOC_CONSTANTS.toml — the literal 0.777 only appears in the TOML.
+_i54_threshold_def = grep(r"const F1_THRESHOLD\s*=\s*0\.\d+", OSOVM / "src", glob="*.jl")
+_i54_measurement   = grep(r"check_f1_threshold|f1_score\s*>=\s*F1_THRESHOLD", OSOVM / "src", glob="*.jl")
+# Both must exist, but NOT in the same file.
+_i54_def_files     = {h.split(":")[0] for h in _i54_threshold_def}
+_i54_meas_files    = {h.split(":")[0] for h in _i54_measurement}
+_i54_collocated    = _i54_def_files & _i54_meas_files  # intersection = problem files
+check(
+    "I-54",
+    "F1 threshold literal and F1 measurement are NOT collocated in the same module",
+    len(_i54_collocated) == 0,
+    f"collocated in: {_i54_collocated}" if _i54_collocated
+    else "threshold defined in Constants.jl (from TOC_CONSTANTS.toml), measured elsewhere",
+    "move the threshold literal to TOC_CONSTANTS.toml → constants.jl; "
+    "the measurement module reads it via `using .Constants: COMPUTE_PROOF_SCORING_THRESHOLD`",
+)
+
 # ── Unmeasured input is a failure, reported last so it is not buried ────────
 # A root the gate could never look at is NOT a passed check -- I-44 applied to
 # the gate itself. Declared-absent roots print [SKIP] and never a pass, so a

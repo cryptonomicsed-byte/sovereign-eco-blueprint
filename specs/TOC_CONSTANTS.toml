@@ -159,7 +159,9 @@ max_chain_depth       = 0               # 0 = flat birthright (no recursive agen
 [settlement]
 # Three-Tier Economic Constitution (2026-09-26):
 quote_expiry_secs     = 300.0           # COMPUTE_QUOTE expires after 5 minutes
-min_work_evidence_score = 0.777         # universal quality gate (F1 or equivalent)
+# min_work_evidence_score REMOVED — was a duplicate of [compute_proof] scoring_threshold
+# at the same value (0.777). Two names for one meaning is the defect this gate was
+# built to prevent. Code must reference [compute_proof] scoring_threshold directly.
 # Declared agent population policy (I-10): the per-agent epoch cap must be
 # small enough that this many agents can each earn their fair share.
 # epoch_synapse_per_agent = dopamine.genesis_seed / dop_per_syn / expected_agent_count

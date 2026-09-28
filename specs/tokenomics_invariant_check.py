@@ -342,6 +342,54 @@ def reachable(symbol: str, *roots: Path, skip: str) -> list[str]:
     return [h for h in grep(symbol, *roots) if skip not in h]
 
 
+def _top_level_arg_count(arg_str: str) -> int:
+    """Count top-level comma-separated arguments in `arg_str`.
+
+    Ignores commas inside balanced () or {} so that generics like Dict{String,Int}
+    and nested calls like Float64(x * y) do not inflate the count.
+    """
+    arg_str = arg_str.strip()
+    if not arg_str:
+        return 0
+    depth_paren = depth_brace = 0
+    commas = 0
+    for ch in arg_str:
+        if ch == '(':
+            depth_paren += 1
+        elif ch == ')':
+            depth_paren -= 1
+        elif ch == '{':
+            depth_brace += 1
+        elif ch == '}':
+            depth_brace -= 1
+        elif ch == ',' and depth_paren == 0 and depth_brace == 0:
+            commas += 1
+    return commas + 1
+
+
+def _extract_call_args(line: str, symbol: str) -> str | None:
+    """Extract the full argument string from a function call in `line`.
+
+    Finds `symbol(` and then reads forward with paren-depth tracking to find
+    the matching `)`, returning the content between them.  Returns None when
+    no call site is found.
+    """
+    pattern = re.compile(re.escape(symbol) + r"\s*\(")
+    m = pattern.search(line)
+    if not m:
+        return None
+    start = m.end()          # index just after the opening '('
+    depth = 1
+    i = start
+    while i < len(line) and depth > 0:
+        if line[i] == '(':
+            depth += 1
+        elif line[i] == ')':
+            depth -= 1
+        i += 1
+    return line[start:i - 1] if depth == 0 else None
+
+
 # ── I-1  One-way valves: no human-facing → hive-facing bypass ────────────────
 hits = grep(r"ase_to_dopamine|ASE_TO_DOPAMINE|ase-signal", OSOVM / "src", KODA2 / "omokoda-core" / "src")
 check(
@@ -1104,13 +1152,109 @@ check(
     "in code nobody can reach",
 )
 
+# ── I-51  Wired guard functions must be called with the declared arity ────────
+# Cause of this round's live MethodError: check_sim_to_real_tier(::String, ::String, ::Dict)
+# called against a 1-arg signature.  A module-load CI step cannot see this because it
+# never calls the opcode.  For every guard wired by the reachable() checks above, compare
+# declared max-arity (greatest-arity overload's comma count + 1) against call-site arity.
+# Guard arity table: (symbol, declared_arity_of_primary_overload, definition_file_name)
+_GUARD_ARITY: list[tuple[str, int, str]] = [
+    ("enforce_epoch_cap",      3, "token_guards.jl"),
+    ("enforce_repeat_limit",   2, "token_guards.jl"),
+    ("check_sim_to_real_tier", 3, "token_guards.jl"),
+    ("check_self_deal",        3, "token_guards.jl"),
+    ("ase_transfer_guard",     1, "token_guards.jl"),
+]
+_arity_breaks: list[str] = []
+for _sym, _declared_arity, _def_name in _GUARD_ARITY:
+    _call_lines = reachable(_sym, OSOVM / "src", KODA2 / "omokoda-core" / "src",
+                            skip=_def_name)
+    for _cline in _call_lines:
+        _arg_str = _extract_call_args(_cline, _sym)
+        if _arg_str is not None:
+            _call_arity = _top_level_arg_count(_arg_str)
+            if _call_arity != _declared_arity:
+                _arity_breaks.append(
+                    f"{_sym}: declared {_declared_arity}-arg, called with {_call_arity}: "
+                    + _cline.strip()
+                )
+check(
+    "I-51",
+    "Wired guard functions are called with the declared arity (prevents silent MethodError)",
+    len(_arity_breaks) == 0,
+    "\n".join(_arity_breaks[:4]) if _arity_breaks else "all guard call arities match declarations",
+    "reconcile call site with the declared method signature; a 3-arg call to a 1-arg method "
+    "throws MethodError at runtime even when the module loads cleanly in CI",
+)
+
+# ── I-52  Tests must not be tautologies ──────────────────────────────────────
+# server_handlers_test.jl shipped with 11 of 12 lines as:
+#   @test occursin("handle_X", read(...server.jl...))
+# These can never fail — handle_X is defined in server.jl.  A test that cannot fail
+# is not a test; it is compliance theatre that closes I-49 on paper only.
+_tautology_hits = grep(
+    r'@test\s+occursin\s*\(.*,\s*read\s*\(.*server\.jl',
+    OSOVM / "test",
+)
+check(
+    "I-52",
+    "Tests do not assert that a symbol exists in the file that defines it (tautology)",
+    len(_tautology_hits) == 0,
+    (f"{len(_tautology_hits)} tautological test(s) found:\n"
+     + "\n".join(_tautology_hits[:3])) if _tautology_hits
+    else "no tautological tests found",
+    "replace occursin(symbol, read(defining_file)) with a real invocation of the handler "
+    "and an assertion on the response status or body",
+)
+
+# ── I-53  Mint-path royalty calls must not hardcode zero revenue ─────────────
+# compute_birther_royalty(agent.get("royalty_rate", 0), 0.0) always returns 0.
+# A call where revenue_ase=0.0 is a no-op — it does not implement the invariant;
+# it satisfies the grep while ensuring the royalty is permanently zero.
+# Use _extract_call_args to handle nested parens in the first argument correctly.
+_zero_royalty: list[str] = []
+for _rln in grep(r"compute_birther_royalty\s*\(", VANTAGE / "backend"):
+    _rargs = _extract_call_args(_rln, "compute_birther_royalty")
+    if _rargs is not None:
+        # Split on top-level commas to isolate the revenue_ase argument (index 1)
+        _rdepth_p = _rdepth_b = 0
+        _rparts: list[str] = []
+        _rbuf: list[str] = []
+        for _rch in _rargs:
+            if _rch in ('(', '['):
+                _rdepth_p += 1
+            elif _rch in (')', ']'):
+                _rdepth_p -= 1
+            elif _rch == '{':
+                _rdepth_b += 1
+            elif _rch == '}':
+                _rdepth_b -= 1
+            elif _rch == ',' and _rdepth_p == 0 and _rdepth_b == 0:
+                _rparts.append(''.join(_rbuf).strip())
+                _rbuf = []
+                continue
+            _rbuf.append(_rch)
+        if _rbuf:
+            _rparts.append(''.join(_rbuf).strip())
+        if len(_rparts) >= 2 and re.match(r'^0(\.0+)?$', _rparts[1].strip()):
+            _zero_royalty.append(_rln.strip())
+check(
+    "I-53",
+    "Birther royalty call does not permanently zero revenue with a hardcoded argument",
+    len(_zero_royalty) == 0,
+    ("\n".join(_zero_royalty[:2])) if _zero_royalty
+    else "no hardcoded-zero royalty call found",
+    "replace hardcoded 0.0 with the actual job revenue_ase from the settlement record; "
+    "a 0.0 argument makes the function permanently return 0 regardless of the rate",
+)
+
 # ── Unmeasured input is a failure, reported last so it is not buried ────────
 # A root the gate could never look at is NOT a passed check -- I-44 applied to
 # the gate itself. Declared-absent roots print [SKIP] and never a pass, so a
 # known gap stays visible instead of being laundered into compliance, while an
 # UNDECLARED gap counts as a failure. Each unmeasured root is its own failing
 # check, because "7 roots unseen" and "1 root unseen" are not the same news.
-def _rel(root: str) -> str:
+def _rel(root: str):
     return root.replace(str(HOME) + "/", "")
 
 

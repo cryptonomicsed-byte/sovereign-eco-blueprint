@@ -839,6 +839,35 @@ check(
     "call enforce_epoch_cap and enforce_repeat_limit from TOC_MINT (0x54)",
 )
 
+# I-55  Guard state arguments must not be inline empty literals (argument-provenance)
+# A guard called as guard_fn(x, Dict{K,V}()) or guard_fn(x, {}) is a stub call:
+# the dict is constructed on the spot, never populated, so the guard always sees an
+# empty state and can never deny. This is the argument-provenance analogue of I-51
+# (arity) — one layer deeper: the argument EXISTS but carries no real state.
+#
+# Pattern: a call to a known guard function where one argument matches an inline
+# empty collection literal: Dict{...}(), Dict(), {}, [], Set() — immediately after
+# the opening paren or a comma, optionally with whitespace.
+_I55_GUARDS = ["enforce_epoch_cap", "enforce_repeat_limit", "check_sim_to_real_tier"]
+_EMPTY_LITERAL = re.compile(
+    r"(?:Dict\s*(?:\{[^}]*\})?\s*\(\s*\)|\{\s*\}|\[\s*\]|Set\s*\(\s*\))"
+)
+_i55_stub_calls: list[str] = []
+for _g in _I55_GUARDS:
+    for _hit in grep(rf"\bTokenGuards\.{_g}\b|\b{_g}\b", OSOVM / "src", glob="*.jl"):
+        _file, _lineno, _line = _hit.split(":", 2)
+        if _EMPTY_LITERAL.search(_line) and not _file.endswith("token_guards.jl"):
+            _i55_stub_calls.append(_hit)
+check(
+    "I-55",
+    "Anti-gaming guard calls pass real module-level state, not inline empty literals",
+    len(_i55_stub_calls) == 0,
+    ("\n".join(_i55_stub_calls[:4])) if _i55_stub_calls
+    else "all guard calls pass real ledger state (no inline Dict{}/[]/Set() arguments)",
+    "replace Dict{String,Int}() with the module-level _EPOCH_COUNT_GLOBAL; "
+    "an inline empty literal means the guard reads no state and can never deny",
+)
+
 # I-33  no work -> ASE path (ASE is clock-only per the constitutional rule)
 # Narrow: exclude ase_amount\s*= because the clock path (abci_endblock.jl) and
 # the AGENT_CONVERT burn opcode (oso_vm.jl) use ase_amount as a LOCAL variable
@@ -1260,14 +1289,41 @@ check(
 #   - any arithmetic or comparison containing the literal
 #
 # constants.jl is explicitly excluded (it is the single allowed home).
+def _i54_literal_is_in_code(hit: str) -> bool:
+    """Return True if the 0.777 literal on this hit line is executable code,
+    not a comment or string literal.
+
+    A literal is NOT in executable code if everything before it on the line is
+    a Julia # comment, or the literal itself falls inside a string token
+    ("..." or triple-quoted). This is intentionally conservative: if we cannot
+    prove the literal is inert, we report it.
+    """
+    # hit format: "path:lineno:content"
+    parts = hit.split(":", 2)
+    if len(parts) < 3:
+        return True
+    content = parts[2]
+    # Find where 0.777 sits on the line.
+    m = re.search(r"(?<!\w)0\.777(?!\d)", content)
+    if not m:
+        return False  # no literal — shouldn't happen, but safe default
+    lit_pos = m.start()
+    before = content[:lit_pos]
+    # Is the literal after a # comment marker on this line?
+    # Strip string literals from 'before' first so # inside a string doesn't count.
+    stripped_before = re.sub(r'"[^"]*"', '""', before)
+    if "#" in stripped_before:
+        return False  # literal is in a comment
+    # Is the literal inside a string? Count unescaped quotes before the literal.
+    quote_count = before.count('"') - before.count('\\"')
+    if quote_count % 2 == 1:
+        return False  # odd number of unescaped quotes → inside string
+    return True
+
 _i54_rogue = [
     h for h in grep(r"(?<!\w)0\.777(?!\d)", OSOVM / "src", glob="*.jl")
-    # allow: constants.jl (canonical home) and docstrings stripped by the scanner
-    # the grep runs on raw source, so filter post-hoc on path only
     if not h.split(":")[0].endswith("constants.jl")
-    # also allow error-message strings and comments — they contain the value for
-    # human readability but do not constitute a measurement or gate
-    and not re.search(r'(?:#|"""|\|\||\|\>|println|@warn|error\(|"[^"]*0\.777)', h.split(":", 1)[-1])
+    and _i54_literal_is_in_code(h)
 ]
 check(
     "I-54",

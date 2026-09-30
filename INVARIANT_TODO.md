@@ -61,20 +61,19 @@ checker: I-32 (anti-gaming caps enforced)
 
 ---
 id: E-agent-registry
-status: STUB
-blocking_on: Vantage principal registry API (is_agent query)
+status: PARTIAL
+blocking_on: SYNAPSE_TRANSFER opcode (design decision)
 file: OSOVM/src/token_guards.jl, OSOVM/src/oso_vm.jl
 what: >
-  is_agent(address, agent_registry) checks _AGENT_REGISTRY_GLOBAL. Agents
-  self-register on first TOC_MINT. But peer SYNAPSE transfers (when that opcode
-  exists) need the recipient to be pre-registered. Currently no SYNAPSE_TRANSFER
-  opcode exists — this gate will matter when one is added.
-  Also: ase_transfer_guard still returns true (stub) — should call !is_agent()
-  once the registry is populated reliably.
+  DONE (2026-09-30): ase_transfer_guard now calls !is_agent(recipient, _AGENT_REGISTRY_GLOBAL)
+  instead of always returning true. Call site in oso_vm.jl passes the live registry.
+  Agents self-register on first TOC_MINT; the guard is fail-open on cold start (empty registry).
+  REMAINING: No SYNAPSE_TRANSFER opcode exists — is_agent() gate for peer Synapse transfers
+  is infrastructure-ready but can never fire until the opcode is designed and added.
 why: >
-  I-4: Synapse is transferable only between agent principals. Human wallets must
-  not receive Synapse. The registry is the enforcement point.
-checker: I-4 (Synapse identity gate)
+  I-3: ASE must never be held by agents. Guard now enforces this once registry is populated.
+  I-4: Synapse transferable only between agent principals. Gate ready, awaiting opcode.
+checker: I-3 (now enforced), I-4 (Synapse identity gate — awaiting SYNAPSE_TRANSFER opcode)
 
 ---
 id: E-epoch-reset
@@ -144,7 +143,7 @@ checker: I-4 (will test the new opcode when added)
 # E-circular            | STUB        | medium  | GIX funded-by DAG
 # E-53 (anchor)         | PARTIAL     | small   | Zàngbétò /anchor endpoint
 # E-tier-registry       | STUB        | small   | Vantage bridge callback
-# E-agent-registry      | STUB        | small   | ase_transfer_guard + SYNAPSE_TRANSFER opcode
+# E-agent-registry      | PARTIAL     | n/a     | ase_transfer_guard wired; awaits SYNAPSE_TRANSFER opcode
 # E-epoch-reset         | STUB        | small   | Koodu BTC clock integration
 # E-witness-network     | SPEC_ONLY   | large   | external witness node deployment
 # E-proof-value-gate    | PARTIAL     | medium  | GPU_CONTRIBUTION f1_score verification

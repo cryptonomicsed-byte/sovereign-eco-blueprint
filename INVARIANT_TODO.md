@@ -1,6 +1,9 @@
 # INVARIANT_TODO.md — Machine-readable work queue for agents
-# Generated: 2026-09-28
-# Gate: 53 checks, ALL PASS
+# Generated: 2026-09-28; updated 2026-09-30
+# Gate: 51 pass, 2 correctly failing (I-24, I-25)
+# Note: I-24/I-25 were passing vacuously (I-24: stub function counted as "exists";
+# I-25: passing because fabrication deleted). Gates now require positive presence.
+# This is the truthful state — both are stubs not yet wired.
 #
 # Format: each block is one work item.
 # Fields: id, status, blocking_on, file, what, why

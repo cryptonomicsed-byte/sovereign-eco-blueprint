@@ -1218,7 +1218,7 @@ _GUARD_ARITY: list[tuple[str, int, str]] = [
     ("enforce_repeat_limit",   2, "token_guards.jl"),
     ("check_sim_to_real_tier", 3, "token_guards.jl"),
     ("check_self_deal",        3, "token_guards.jl"),
-    ("ase_transfer_guard",     1, "token_guards.jl"),
+    ("ase_transfer_guard",     2, "token_guards.jl"),  # 2nd arg (agent_registry) has a default
     ("is_agent",               2, "token_guards.jl"),
     ("agent_only",             2, "token_guards.jl"),
 ]

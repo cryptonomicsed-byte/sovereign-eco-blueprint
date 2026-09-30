@@ -40,19 +40,20 @@ checker: I-18 (anchor reachability)
 
 ---
 id: E-tier-registry
-status: PARTIAL
-blocking_on: initial bulk-sync on OSOVM process restart
+status: DONE
+blocking_on: none
 file: OSOVM/src/server.jl, Vantage/backend/tier_engine.py
 what: >
-  DONE (2026-09-30): POST /v1/tier-update added to OSOVM; Vantage tier_engine
-  calls push_tier() after every tier change (increment_reputation/commitments/
-  witness_approvals and admin_set_tier). Registry stays warm after first event.
-  REMAINING: on OSOVM process restart, registry is empty until next tier change.
-  Need POST /v1/tier-sync (bulk) called by Vantage on startup, and wiring
-  into agent registration path.
+  DONE (2026-09-30):
+  - POST /v1/tier-update: per-agent push from Vantage tier changes
+  - POST /v1/tier-sync: bulk snapshot from Vantage on startup (clears stale entries)
+  - Vantage tier_engine: _notify_tier_change() after every increment + admin_set_tier
+  - Vantage main.py lifespan: _bulk_tier_snapshot() → sync_tiers() on startup
+  - server_handlers_test.jl: 5 tests covering both endpoints
+  - 53/53 invariants passing including I-49 (handler coverage)
 why: >
-  Tier gate for sim_to_real 5x bonus: T2+ required. Boot-time gap means
-  just-restarted OSOVM denies sim_to_real for all agents until next tier event.
+  Tier gate for sim_to_real 5x bonus: T2+ required. Registry now stays warm
+  on startup and on every tier change. No remaining boot-time gap.
 checker: I-32 (anti-gaming caps enforced)
 
 ---

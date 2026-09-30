@@ -40,18 +40,19 @@ checker: I-18 (anchor reachability)
 
 ---
 id: E-tier-registry
-status: STUB
-blocking_on: Vantage agent-registration bridge callback
-file: OSOVM/src/oso_vm.jl
+status: PARTIAL
+blocking_on: initial bulk-sync on OSOVM process restart
+file: OSOVM/src/server.jl, Vantage/backend/tier_engine.py
 what: >
-  _TIER_REGISTRY_GLOBAL (agent_id → trust tier Int) starts empty every process
-  restart. The check_sim_to_real_tier gate correctly fails-closed (empty registry
-  → tier 0 → DENY for sim_to_real), but no path populates it yet. Need a
-  Vantage bridge callback that writes tier assignments on agent registration or
-  heartbeat.
+  DONE (2026-09-30): POST /v1/tier-update added to OSOVM; Vantage tier_engine
+  calls push_tier() after every tier change (increment_reputation/commitments/
+  witness_approvals and admin_set_tier). Registry stays warm after first event.
+  REMAINING: on OSOVM process restart, registry is empty until next tier change.
+  Need POST /v1/tier-sync (bulk) called by Vantage on startup, and wiring
+  into agent registration path.
 why: >
-  Tier gate for sim_to_real 5x bonus: T2+ required. Without registry population,
-  sim_to_real always denies even for legitimate T2 agents.
+  Tier gate for sim_to_real 5x bonus: T2+ required. Boot-time gap means
+  just-restarted OSOVM denies sim_to_real for all agents until next tier event.
 checker: I-32 (anti-gaming caps enforced)
 
 ---

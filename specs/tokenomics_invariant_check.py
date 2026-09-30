@@ -722,14 +722,20 @@ check(
 )
 
 # I-24  the score is a signed receipt from a non-claimant, referenced by id
-hits = grep(r"verify_score_signature|score_attestation|signed_score|verifier_pubkey",
-            OSOVM / "src", KODA2 / "omokoda-core" / "src")
+# A stub function that always returns false is NOT a passing implementation —
+# we require at least one call site in addition to the definition.
+defn_hits = grep(r"^function verify_score_signature", OSOVM / "src", glob="*.jl")
+call_hits = grep(r"verify_score_signature\s*\(", OSOVM / "src", KODA2 / "omokoda-core" / "src")
+# call sites > definition sites means the function is actually invoked somewhere
+i24_real = len(call_hits) > len(defn_hits)
+all_hits = defn_hits + call_hits
 check(
     "I-24",
     "The score is a signed attestation from a non-claimant verifier, referenced by id",
-    len(hits) > 0,
-    "\n".join(hits[:4]) if hits else "no signed-score mechanism anywhere",
-    "scores must be GIX-addressable receipts signed by the verifier, not numbers on the request",
+    i24_real,
+    "\n".join(all_hits[:4]) if all_hits else "no signed-score mechanism anywhere",
+    "scores must be GIX-addressable receipts signed by the verifier, not numbers on the request; "
+    "verify_score_signature exists but is a stub returning false — wire it to a real call site",
 )
 
 # ── I-25..I-29  The VERIFIER LAYER (Zangbeto witness quorum) ──────────────
@@ -737,13 +743,24 @@ check(
 # This is that witness chain. It is the terminal dependency of the whole economy.
 
 # I-25  witness votes are signatures from distinct keypairs, not locally simulated
-hits = grep(r'witness_data\s*=\s*"witness-|collect_witness_votes', OSOVM / "src", glob="*.jl")
+# Two conditions: (a) the fabricated local simulation is gone, AND
+# (b) a real Ed25519-based verification path exists.
+sim_hits = grep(r'witness_data\s*=\s*"witness-|collect_witness_votes', OSOVM / "src", glob="*.jl")
+real_hits = grep(r"ed25519_verify|verify_witness_signature|witness_pubkey|sign_witness_vote",
+                 OSOVM / "src", glob="*.jl")
+i25_ok = len(sim_hits) == 0 and len(real_hits) > 0
+evidence_lines: list[str] = []
+if sim_hits:
+    evidence_lines.append("local simulation still present: " + sim_hits[0])
+if not real_hits:
+    evidence_lines.append("no real Ed25519 witness verification found")
 check(
     "I-25",
     "Witness votes are signatures from distinct keypairs, not simulated in-process",
-    len(hits) == 0,
-    "\n".join(hits[:4]) if hits else "no local witness simulation",
-    "witnesses must be separate principals signing with their own keys over the receipt hash",
+    i25_ok,
+    "\n".join(evidence_lines) if evidence_lines else "real Ed25519 witness verification present",
+    "witnesses must be separate principals signing with their own keys over the receipt hash; "
+    "request_witness_votes() currently returns an empty stub — wire to a real witness network",
 )
 
 # I-26  the quorum outcome must not depend on a claimant-reported metric

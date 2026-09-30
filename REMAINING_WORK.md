@@ -1,17 +1,20 @@
 # OSOVM / sovereign-eco-blueprint — remaining work
 
 Generated from `tokenomics_invariant_check.py` on 9191317 + current blueprint.
-Gate: **31 failing** (exit 31). Closed so far: I-12, I-13.
+Gate: **31 originally failing**. Closed: I-12, I-13, I-38, I-39, I-49 + E-tier-registry.
+After I-24/I-25 gate tightening (2026-09-30), **2 additional gates now correctly FAIL**
+(were passing vacuously — see sections A and C).
 Companion evidence dump: `~/gate_full.txt`
 
 ---
 
-## The 31, grouped by root cause (not by ID)
+## The remaining items, grouped by root cause
 
 Each package below closes the invariants listed. Ordering at the bottom.
 
-### A. HTTP authority — the root (5) : I-38, I-39, I-41, I-42, I-19
-Everything economic is downstream of this. `server.jl` has **0** auth-related lines.
+### A. HTTP authority — partially closed (3 remaining) : I-41, I-42, I-19
+I-38 (auth on POST /run) and I-39 (current_sender from authenticated principal) are CLOSED.
+`server.jl` now has `authenticate()` wired to all mint-capable endpoints.
 
 - [ ] **I-38** add auth to `POST /run` — API key → authenticated principal. Today it
       executes mint-capable opcodes with no key, token or signature.
@@ -44,16 +47,18 @@ The block `oso_vm.jl:~670-760` is 0-caller dead code carrying four defects:
 The biggest package, and a genuine build. Theme: **a score must be a signed attestation
 from a non-claimant verifier, bound to a withheld referent.**
 
-- [ ] **I-25** witnesses are simulated, not signed. `zangbeto_receipts.jl:363`
-      `collect_witness_votes` fabricates `"witness-$w-$receipt_hash"` (:368) and hashes
-      it. Must be separate principals signing with their own keys.
-- [ ] **I-26** approval threshold is set by the claimant's own `f1_score` (:373
-      `threshold = f1_score >= 0.9 ? 'd' : 'c'`).
-- [ ] **I-29** consequence: p(approve)=0.75 base, 0.8125 at f1≥0.9 → claimant cuts
-      failures ~10× by reporting a high F1. Failure is noise, not a threshold.
+- [ ] **I-25** (2026-09-30: gate now correctly FAILs) `collect_witness_votes` fabrication
+      was deleted; `request_witness_votes()` returns empty stub `AntispamWitnessVote[]`.
+      Gate now requires positive presence of `ed25519_verify|verify_witness_signature`.
+      The fabrication is gone but the real network is not yet wired.
+- [ ] **I-26** approval threshold is set by the claimant's own `f1_score`.
+- [ ] **I-29** consequence: p(approve)=0.75 base → claimant cuts failures ~10× by
+      reporting a high F1. Failure is noise, not a threshold.
 - [ ] **I-27** two `WitnessVote` definitions; both quorum fns read different fields
       (`veilos_antispam.jl:303` `v.vote` vs `zangbeto_receipts.jl:395` `v.approved`).
-- [ ] **I-24** no signed-score mechanism exists at all.
+- [ ] **I-24** (2026-09-30: gate now correctly FAILs) `verify_score_signature` exists
+      as a STUB returning `false` — no call sites outside the function definition.
+      Gate now requires call_sites > definition_sites.
 - [ ] **I-36** no referent field — a score is unfalsifiable by construction.
 - [ ] **I-37** seal covers `receipt_hash + approvals` only (:158, :416), so it certifies
       the record didn't change, not that the claim is true. Bind to the referent.
@@ -93,22 +98,16 @@ from a non-claimant verifier, bound to a withheld referent.**
 - [ ] **I-32** declared-but-unenforced caps in TOC_CONSTANTS: `per_agent_epoch_cap`,
       `repeat_limit`, `sim_to_real_min_tier`. Implement at the mint gate or delete.
 
-### F. Registry + test infrastructure (2 + non-gate)
+### F. Registry + test infrastructure (1 remaining + non-gate)
 - [ ] **I-16** mint sites not in the registry: `oso_vm.jl:2442`, `vm_core.jl:531`, `:556`.
-- [ ] **I-49** 11 HTTP handlers in `server.jl`, **0** invoked from `test/`.
-      Untested: handle_gpu_contribution, handle_health, handle_opcodes, handle_run,
-      handle_toc_allowlist_check, handle_ucx_meter_read, handle_ucx_preflight,
-      handle_ucx_settle, handle_v, handle_veilsim_run (+1).
-- [ ] `make test` currently FAILS — proved by running it:
-      `VMCore Hardened Tests | 39 pass 1 fail 3 error 43 total`; the only failing
-      testset is "IMPACT minting with rounding" (vm_core_test.jl:36-49) which tests
-      opcode 0x11, deleted in f75b83f. Delete the testset.
-- [ ] `inheritance.jl:268` `distribute_offering()` still calls `accrue_rewards(w, ...)`,
-      deleted at :279. Dangling call on the primary distribution path.
-- [ ] gate cosmetic: `tokenomics_invariant_check.py:516` hardcodes the I-13 evidence
-      prefix `"unauthorized issuance sites present:"`, so I-13 PASSES with text
-      asserting the opposite.
-- [ ] `runtests.jl` covering the 34 unrun test files.
+- [x] **I-49** CLOSED (2026-09-30): 13 HTTP handlers in `server.jl`, all covered by
+      `test/server_handlers_test.jl`. Module import bug (`OsoServer` → `OsoVMServer`) fixed.
+- [x] `make test` IMPACT rounding testset deleted (opcode 0x11 removed in f75b83f).
+- [x] `inheritance.jl` `accrue_rewards` dangling call deleted.
+- [x] I-13 evidence string prefix fixed.
+- [x] `runtests.jl` subprocess-per-file runner covering all 31 test files added.
+- [x] `opcodes.jl:12` `:IMPACT => 0x11` removed (2026-09-30); handler rejects it at runtime
+      and the declaration is now gone.
 
 ### G. The parallel VM — one decision, ~5 hits
 `vm_core.jl` is **not loaded by anything**; only `test/vm_core_test.jl` includes it.

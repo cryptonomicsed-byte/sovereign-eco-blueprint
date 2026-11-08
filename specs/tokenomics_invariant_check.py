@@ -572,11 +572,11 @@ ISSUANCE_SITES = {
     ("abci_endblock.jl", "POOL_WEIGHTS"): True,       # clock (L1, currently dead)
     # Authorized Synapse (ToC) issuance — GPU hours → Synapse tokens via watermark
     ("oso_vm.jl",   "minted_synapse"): True,
-    ("vm_core.jl",  "minted_synapse"): True,          # test harness VM, same logic
+    ("vm_core.UNWIRED.jl", "minted_synapse"): True,   # unwired test-harness VM (renamed 2026-11-08), still measured
     # Removed issuance sites — kept in registry so they fail if resurrected
     ("oso_vm.jl",   "impact_mint"):    False,
-    ("vm_core.jl",  "op_impact"):      False,
-    ("vm_core.jl",  "op_ase_mint"):    False,
+    ("vm_core.UNWIRED.jl", "op_impact"):      False,
+    ("vm_core.UNWIRED.jl", "op_ase_mint"):    False,
     ("oso_vm.jl",   "accrued_rewards"):False,
     ("world_tiles.jl","total_ase_minted"):False,
 }
@@ -660,7 +660,7 @@ check(
 hits = grep(r"get\(args, :f1_score|get\(args, :difficulty|"
             r"get\(args, :quality|get\(args, :verification|get\(args, :independence|"
             r"get\(args, :novelty|get\(args, :utility|get\(args, :gpu_seconds",
-            OSOVM / "src" / "oso_vm.jl", OSOVM / "src" / "vm_core.jl")
+            OSOVM / "src" / "oso_vm.jl", OSOVM / "src" / "vm_core.UNWIRED.jl")
 # Verified path: gpu_seconds must come from a ZangbetoReceipt, not caller args.
 gpu_sec_verified = grep(
     r"zangbeto_anchor.*gpu_seconds|receipt.*gpu_seconds.*verified|gpu_seconds.*from_receipt",
